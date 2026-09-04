@@ -29,62 +29,35 @@
 - Runtime state schema v2 via `status --json=v2` ✅
 - Health markers synchronized into runtime state ✅
 - Managed/unmanaged backend ownership contract ✅
-- Profile-safe SSH backend PID ownership ✅
-- Port collision refusal for managed SSH backend ✅
+- Profile-safe backend PID ownership ✅
+- Port collision refusal for managed local listeners ✅
 - Long-lived `proxy-ctl run` service-manager entrypoint ✅
 - systemd lifecycle no longer depends on foreground backend environment hacks ✅
 
 ## V2 deployment hardening — completed
 - Dedicated least-privilege systemd service account ✅
-- Root-owned/group-readable configuration with no group/other write access ✅
-- Profile permission checks before shell-source evaluation ✅
-- Runtime/log directories owned by the service account ✅
+- Configuration ownership/mode enforcement ✅
+- Runtime/log directory isolation ✅
 - systemd `NoNewPrivileges`, `ProtectSystem`, `ProtectHome`, and kernel sandboxing ✅
-- Generated Privoxy configuration moved out of `/etc` into runtime state ✅
+- Generated Privoxy configuration moved into runtime state ✅
+- Rootless interactive installation/execution ✅
+- Rootless user systemd services ✅
+- Reproducible system/rootless upgrade entrypoints with pre-restore validation ✅
+- Non-root container runtime based on `proxy-ctl run` ✅
 
-## V2 runtime consistency — completed
-- Profile-local atomic runtime-state lock ✅
-- Stale-lock recovery using PID/start-time identity ✅
-- Atomic `runtime.json` replacement ✅
-- SSH process executable/UID/command-line identity checks ✅
-- Exact listener-to-process ownership check ✅
-- Stale SSH PID file cleanup ✅
-
-## V2 operator portability — completed
-- Rootless interactive installation/execution without requiring a system account ✅
-- XDG configuration/profile/runtime paths ✅
-- Rootless user systemd service/profile/health templates ✅
-- Custom user install paths propagated into generated user units ✅
-- Symlink-safe installed entrypoints ✅
-
-## V2 backend compatibility — completed gate
-- Separate backend liveness from active network health probes ✅
+## V2 backend compatibility — completed
+- Separate backend liveness from active network health ✅
 - Adapter/backend compatibility matrix and contract tests ✅
-- sing-box integration against the stable contract ✅
-- mihomo integration against the stable contract ✅
-- HTTP CONNECT upstream backend ✅
+- SSH SOCKS5 ✅
+- Existing local SOCKS/HTTP endpoint ✅
+- sing-box ✅
+- mihomo ✅
+- HTTP CONNECT upstream ✅
 
-## V2 backends
-1. SSH SOCKS5 ✅
-2. Existing local SOCKS/HTTP endpoint ✅
-3. sing-box ✅
-4. mihomo ✅
-5. HTTP CONNECT upstream ✅
-
-Managed backends implement:
-`validate/start/stop/liveness/status/endpoint/managed/pid/process_identity/capabilities`.
-
-Unmanaged upstream backends implement the same semantic lifecycle surface but report `managed=false` and never terminate external processes.
-
-## V2 deployment
-- Rootless Linux execution ✅
-- Container image and host/container network documentation
-- Reproducible installation and upgrade path ✅
-- Security hardening and least-privilege service account ✅
-- Configuration ownership/mode verification ✅
-
-## V2 observability
-- Structured runtime state ✅
-- Stable machine-readable status ✅
-- Health history and recovery events ✅
-- TUI consumes the same state model
+## V2 release engineering — next
+- Versioned 0.2.x release/tag
+- Reproducible container image build/publish and digest capture
+- Real-binary optional CI matrix for sing-box/mihomo
+- Structured operational telemetry and health-history inspection
+- Host/container networking deployment patterns
+- Upgrade rollback strategy and compatibility policy
