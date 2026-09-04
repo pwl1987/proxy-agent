@@ -50,7 +50,7 @@ for _ in {1..100}; do [[ -S "$SOCKET" ]] && break; sleep 0.05; done
 
 curl_unix() { curl --silent --show-error --fail --unix-socket "$SOCKET" "http://localhost$1"; }
 post_json() { curl --silent --show-error --fail --unix-socket "$SOCKET" -H 'Content-Type: application/json' -X POST --data "$2" "http://localhost$1"; }
-post_status() { curl --silent --show-error --fail --unix-socket "$SOCKET" -o "$2" -w '%{http_code}' -H 'Content-Type: application/json' -X POST --data "$3" "http://localhost$1"; }
+post_status() { curl --silent --show-error --unix-socket "$SOCKET" -o "$2" -w '%{http_code}' -H 'Content-Type: application/json' -X POST --data "$3" "http://localhost$1"; }
 
 # The API must not manufacture a revision merely by starting or serving health/status requests.
 [[ ! -e "$TMP/state/revisions/desired_revision" ]]
