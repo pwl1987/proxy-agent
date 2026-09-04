@@ -2,51 +2,145 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../lib/common.sh
 source "$ROOT/lib/common.sh"
+# shellcheck source=../backends/ssh-socks.sh
 source "$ROOT/backends/ssh-socks.sh"
+# shellcheck source=../adapters/privoxy.sh
 source "$ROOT/adapters/privoxy.sh"
 
 load_config
 
-backend_start() { case "$BACKEND" in ssh-socks) backend_ssh_socks_start ;; *) die "unsupported backend: $BACKEND" ;; esac; }
-backend_stop() { case "$BACKEND" in ssh-socks) backend_ssh_socks_stop ;; *) die "unsupported backend: $BACKEND" ;; esac; }
-adapter_start() { [[ "${HTTP_ENABLED:-false}" == "true" ]] && adapter_privoxy_start; }
-adapter_stop() { [[ "${HTTP_ENABLED:-false}" == "true" ]] && adapter_privoxy_stop; }
-cmd_start() { backend_start; if ! adapter_start; then backend_stop; die 'proxy adapter failed to start'; fi; log "started backend=$BACKEND socks=${SOCKS_BIND}:${SOCKS_PORT} http=${HTTP_ENABLED:-false}"; }
+backend_start() {
+  case "$BACKEND" in
+    ssh-socks) backend_ssh_socks_start ;;
+    *) die "unsupported backend: $BACKEND" ;;
+  esac
+}
+backend_stop() {
+  case "$BACKEND" in
+    ssh-socks) backend_ssh_socks_stop ;;
+    *) die "unsupported backend: $BACKEND" ;;
+  esac
+}
+adapter_start() {
+  [[ "${HTTP_ENABLED:-false}" == "true" ]] && adapter_privoxy_start
+}
+adapter_stop() {
+  [[ "${HTTP_ENABLED:-false}" == "true" ]] && adapter_privoxy_stop
+}
+cmd_start() {
+  backend_start
+  if ! adapter_start; then backend_stop; die 'proxy adapter failed to start'; fi
+  log "started backend=$BACKEND socks=${SOCKS_BIND}:${SOCKS_PORT} http=${HTTP_ENABLED:-false}"
+}
 cmd_stop() { adapter_stop; backend_stop; log 'stopped'; }
 cmd_restart() { cmd_stop; sleep 1; cmd_start; }
 cmd_status() {
   printf 'proxy-agent\n  backend: %s\n' "$BACKEND"
   if backend_ssh_socks_status 2>/dev/null; then echo '  SOCKS:  listening'; else echo '  SOCKS:  not listening'; fi
-  if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then if adapter_privoxy_status 2>/dev/null; then echo '  HTTP:   listening'; else echo '  HTTP:   not listening'; fi; else echo '  HTTP:   disabled'; fi
+  if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then
+    if adapter_privoxy_status 2>/dev/null; then echo '  HTTP:   listening'; else echo '  HTTP:   not listening'; fi
+  else echo '  HTTP:   disabled'; fi
   printf '  remote: %s@%s:%s\n' "$REMOTE_USER" "$REMOTE_HOST" "${REMOTE_PORT:-22}"
 }
-curl_via_socks() { local url="$1"; curl -fsS --connect-timeout "$HEALTH_TIMEOUT" --max-time "$((HEALTH_TIMEOUT + 5))" --socks5-hostname "${SOCKS_BIND}:${SOCKS_PORT}" "$url" >/dev/null; }
-curl_via_http() { local url="$1"; curl -fsS --connect-timeout "$HEALTH_TIMEOUT" --max-time "$((HEALTH_TIMEOUT + 5))" --proxy "http://${HTTP_BIND}:${HTTP_PORT}" "$url" >/dev/null; }
+curl_via_socks() {
+  local url="$1"
+  curl -fsS --connect-timeout "$HEALTH_TIMEOUT" --max-time "$((HEALTH_TIMEOUT + 5))" --socks5-hostname "${SOCKS_BIND}:${SOCKS_PORT}" "$url" >/dev/null
+}
+curl_via_http() {
+  local url="$1"
+  curl -fsS --connect-timeout "$HEALTH_TIMEOUT" --max-time "$((HEALTH_TIMEOUT + 5))" --proxy "http://${HTTP_BIND}:${HTTP_PORT}" "$url" >/dev/null
+}
 cmd_test() {
-  require_cmd curl; echo '== proxy-agent connectivity test =='; local failed=0 target
+  require_cmd curl
+  echo '== proxy-agent connectivity test =='
+  local failed=0 target
   IFS=',' read -r -a targets <<< "${HEALTH_TARGETS:-}"
   for target in "${targets[@]}"; do
     [[ -n "$target" ]] || continue
-    if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then if curl_via_http "$target"; then printf 'PASS  HTTP  %s\n' "$target"; else printf 'FAIL  HTTP  %s\n' "$target"; failed=1; fi; else if curl_via_socks "$target"; then printf 'PASS  SOCKS %s\n' "$target"; else printf 'FAIL  SOCKS %s\n' "$target"; failed=1; fi; fi
+    if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then
+      if curl_via_http "$target"; then printf 'PASS  HTTP  %s\n' "$target"; else printf 'FAIL  HTTP  %s\n' "$target"; failed=1; fi
+    else
+      if curl_via_socks "$target"; then printf 'PASS  SOCKS %s\n' "$target"; else printf 'FAIL  SOCKS %s\n' "$target"; failed=1; fi
+    fi
   done
   return "$failed"
 }
 cmd_diagnose() {
   echo '== proxy-agent diagnosis =='
-  for c in ssh autossh curl ss; do if command -v "$c" >/dev/null 2>&1; then printf 'OK    %s\n' "$c"; else printf 'MISS  %s\n' "$c"; fi; done
-  if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then if command -v privoxy >/dev/null 2>&1; then printf 'OK    privoxy\n'; else printf 'MISS  privoxy\n'; fi; fi
-  echo "config: $PA_CONFIG"; echo "backend: $BACKEND"; echo "SOCKS: ${SOCKS_BIND}:${SOCKS_PORT}"; echo "HTTP:  ${HTTP_ENABLED:-false} ${HTTP_BIND}:${HTTP_PORT}"
+  for c in ssh autossh curl ss; do
+    if command -v "$c" >/dev/null 2>&1; then printf 'OK    %s\n' "$c"; else printf 'MISS  %s\n' "$c"; fi
+  done
+  if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then
+    if command -v privoxy >/dev/null 2>&1; then printf 'OK    privoxy\n'; else printf 'MISS  privoxy\n'; fi
+  fi
+  echo "config: $PA_CONFIG"
+  echo "backend: $BACKEND"
+  echo "SOCKS: ${SOCKS_BIND}:${SOCKS_PORT}"
+  echo "HTTP:  ${HTTP_ENABLED:-false} ${HTTP_BIND}:${HTTP_PORT}"
   if [[ -n "${REMOTE_HOST:-}" && "${REMOTE_HOST:-}" != *example.com ]]; then getent hosts "$REMOTE_HOST" || warn "cannot resolve $REMOTE_HOST"; fi
   if ! port_listening "$SOCKS_PORT"; then warn 'SOCKS listener is down'; fi
 }
-ipv4_to_int() { local IFS=. a b c d; read -r a b c d <<< "$1"; printf '%u\n' $(( (a << 24) | (b << 16) | (c << 8) | d )); }
-cidr_contains() { local ip="$1" cidr="$2" network prefix mask base value; [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1; [[ "$cidr" =~ ^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/([0-9]+)$ ]] || return 1; network="${BASH_REMATCH[1]}"; prefix="${BASH_REMATCH[2]}"; (( prefix >= 0 && prefix <= 32 )) || return 1; base="$(ipv4_to_int "$network")"; value="$(ipv4_to_int "$ip")"; if (( prefix == 0 )); then mask=0; else mask=$(( (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF )); fi; (( (base & mask) == (value & mask) )); }
-cmd_route() { local host="${1:-}" item; [[ -n "$host" ]] || die 'usage: proxy-ctl route <host-or-ip>'; IFS=',' read -r -a items <<< "${DIRECT_DOMAINS:-}"; for item in "${items[@]}"; do item="${item#.}"; [[ -n "$item" ]] || continue; if [[ "$host" == "$item" || "$host" == *".$item" ]]; then echo "DIRECT  $host  (domain policy: $item)"; return 0; fi; done; IFS=',' read -r -a items <<< "${DIRECT_CIDRS:-}"; for item in "${items[@]}"; do [[ -n "$item" ]] || continue; if cidr_contains "$host" "$item"; then echo "DIRECT  $host  (CIDR policy: $item)"; return 0; fi; done; echo "PROXY   $host  (default route)"; }
-cmd_env() { if [[ "${1:-}" == '--off' ]]; then printf 'unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy NO_PROXY no_proxy\n'; return; fi; local no_proxy="${DIRECT_CIDRS:-}"; [[ -z "${DIRECT_DOMAINS:-}" ]] || no_proxy="${no_proxy:+${no_proxy},}${DIRECT_DOMAINS}"; [[ -z "${NO_PROXY_EXTRA:-}" ]] || no_proxy="${no_proxy:+${no_proxy},}${NO_PROXY_EXTRA}"; if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then local http="http://${HTTP_BIND}:${HTTP_PORT}"; printf 'export HTTP_PROXY=%q HTTPS_PROXY=%q http_proxy=%q https_proxy=%q\n' "$http" "$http" "$http" "$http"; else printf 'unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy\n'; fi; local socks="socks5h://${SOCKS_BIND}:${SOCKS_PORT}"; printf 'export ALL_PROXY=%q all_proxy=%q\n' "$socks" "$socks"; printf 'export NO_PROXY=%q no_proxy=%q\n' "$no_proxy" "$no_proxy"; }
+ipv4_to_int() {
+  local IFS=.
+  local a b c d
+  read -r a b c d <<< "$1"
+  printf '%u\n' $(( (a << 24) | (b << 16) | (c << 8) | d ))
+}
+cidr_contains() {
+  local ip="$1" cidr="$2" network prefix mask base value
+  [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+  [[ "$cidr" =~ ^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/([0-9]+)$ ]] || return 1
+  network="${BASH_REMATCH[1]}"; prefix="${BASH_REMATCH[2]}"
+  (( prefix >= 0 && prefix <= 32 )) || return 1
+  base="$(ipv4_to_int "$network")"; value="$(ipv4_to_int "$ip")"
+  if (( prefix == 0 )); then mask=0; else mask=$(( (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF )); fi
+  (( (base & mask) == (value & mask) ))
+}
+cmd_route() {
+  local host="${1:-}"
+  [[ -n "$host" ]] || die 'usage: proxy-ctl route <host-or-ip>'
+  local item
+  IFS=',' read -r -a items <<< "${DIRECT_DOMAINS:-}"
+  for item in "${items[@]}"; do
+    item="${item#.}"; [[ -n "$item" ]] || continue
+    if [[ "$host" == "$item" || "$host" == *".$item" ]]; then echo "DIRECT  $host  (domain policy: $item)"; return 0; fi
+  done
+  IFS=',' read -r -a items <<< "${DIRECT_CIDRS:-}"
+  for item in "${items[@]}"; do [[ -n "$item" ]] || continue; if cidr_contains "$host" "$item"; then echo "DIRECT  $host  (CIDR policy: $item)"; return 0; fi; done
+  echo "PROXY   $host  (default route)"
+}
+cmd_env() {
+  if [[ "${1:-}" == '--off' ]]; then printf 'unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy NO_PROXY no_proxy\n'; return; fi
+  local no_proxy="${DIRECT_CIDRS:-}"
+  [[ -z "${DIRECT_DOMAINS:-}" ]] || no_proxy="${no_proxy:+${no_proxy},}${DIRECT_DOMAINS}"
+  [[ -z "${NO_PROXY_EXTRA:-}" ]] || no_proxy="${no_proxy:+${no_proxy},}${NO_PROXY_EXTRA}"
+  if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then
+    local http="http://${HTTP_BIND}:${HTTP_PORT}"
+    printf 'export HTTP_PROXY=%q HTTPS_PROXY=%q http_proxy=%q https_proxy=%q\n' "$http" "$http" "$http" "$http"
+  else printf 'unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy\n'; fi
+  local socks="socks5h://${SOCKS_BIND}:${SOCKS_PORT}"
+  printf 'export ALL_PROXY=%q all_proxy=%q\n' "$socks" "$socks"
+  printf 'export NO_PROXY=%q no_proxy=%q\n' "$no_proxy" "$no_proxy"
+}
 cmd_integration() { exec "$ROOT/bin/proxy-agent-integration" "${1:-}"; }
-cmd_doctor() { local rc=0; [[ "$SOCKS_BIND" != '0.0.0.0' ]] || { warn 'SOCKS is exposed on all interfaces'; rc=1; }; [[ "${SSH_STRICT_HOST_KEY_CHECKING:-yes}" == 'yes' ]] || { warn 'SSH host-key verification is disabled'; rc=1; }; [[ -n "${REMOTE_HOST:-}" ]] || { warn 'REMOTE_HOST is empty'; rc=1; }; [[ "${REMOTE_HOST:-}" != 'proxy.example.com' ]] || { warn 'REMOTE_HOST still uses the example placeholder'; rc=1; }; [[ "$SOCKS_PORT" =~ ^[0-9]+$ && "$SOCKS_PORT" -ge 1 && "$SOCKS_PORT" -le 65535 ]] || { warn 'invalid SOCKS_PORT'; rc=1; }; if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then [[ "$HTTP_PORT" =~ ^[0-9]+$ && "$HTTP_PORT" -ge 1 && "$HTTP_PORT" -le 65535 ]] || { warn 'invalid HTTP_PORT'; rc=1; }; command -v privoxy >/dev/null 2>&1 || { warn 'HTTP_ENABLED=true but privoxy is missing'; rc=1; }; fi; return "$rc"; }
-usage() { cat <<'EOF'
+cmd_tui() { exec "$ROOT/bin/proxy-agent-tui"; }
+cmd_doctor() {
+  local rc=0
+  [[ "$SOCKS_BIND" != '0.0.0.0' ]] || { warn 'SOCKS is exposed on all interfaces'; rc=1; }
+  [[ "${SSH_STRICT_HOST_KEY_CHECKING:-yes}" == 'yes' ]] || { warn 'SSH host-key verification is disabled'; rc=1; }
+  [[ -n "${REMOTE_HOST:-}" ]] || { warn 'REMOTE_HOST is empty'; rc=1; }
+  [[ "${REMOTE_HOST:-}" != 'proxy.example.com' ]] || { warn 'REMOTE_HOST still uses the example placeholder'; rc=1; }
+  [[ "$SOCKS_PORT" =~ ^[0-9]+$ && "$SOCKS_PORT" -ge 1 && "$SOCKS_PORT" -le 65535 ]] || { warn 'invalid SOCKS_PORT'; rc=1; }
+  if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then
+    [[ "$HTTP_PORT" =~ ^[0-9]+$ && "$HTTP_PORT" -ge 1 && "$HTTP_PORT" -le 65535 ]] || { warn 'invalid HTTP_PORT'; rc=1; }
+    command -v privoxy >/dev/null 2>&1 || { warn 'HTTP_ENABLED=true but privoxy is missing'; rc=1; }
+  fi
+  return "$rc"
+}
+usage() {
+  cat <<'EOF'
 Usage: proxy-ctl <command>
   start                  start configured backend and adapters
   stop                   stop adapters and backend
@@ -58,6 +152,11 @@ Usage: proxy-ctl <command>
   route <host-or-ip>     explain domain/CIDR routing decision
   env [--off]            print shell commands for proxy environment
   integration <app|all>  print application integration commands
+  tui                    open interactive terminal dashboard
 EOF
 }
-case "${1:-}" in start) cmd_start ;; stop) cmd_stop ;; restart) cmd_restart ;; status) cmd_status ;; test) cmd_test ;; diagnose) cmd_diagnose ;; doctor) cmd_doctor ;; route) shift; cmd_route "${1:-}" ;; env) shift; cmd_env "${1:-}" ;; integration) shift; cmd_integration "${1:-}" ;; *) usage; exit 2 ;; esac
+case "${1:-}" in
+  start) cmd_start ;; stop) cmd_stop ;; restart) cmd_restart ;; status) cmd_status ;; test) cmd_test ;;
+  diagnose) cmd_diagnose ;; doctor) cmd_doctor ;; route) shift; cmd_route "${1:-}" ;; env) shift; cmd_env "${1:-}" ;;
+  integration) shift; cmd_integration "${1:-}" ;; tui) cmd_tui ;; *) usage; exit 2 ;;
+esac
