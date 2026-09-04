@@ -108,7 +108,7 @@ PY
 curl_unix /api/v1/health >"$TMP/health-stopped.json"
 python3 - "$TMP/health-stopped.json" <<'PY'
 import json,sys
-obj=json.load(open(sys.argv[1])); assert obj["data"]["status"] == "degraded",obj; assert obj["data"]["readiness"] == "not_ready",obj
+obj=json.load(open(sys.argv[1])); assert obj["data"]["status"] == "ok",obj; assert obj["data"]["readiness"] == "ready",obj; assert obj["data"]["desired_revision"] == 1,obj; assert obj["data"]["observed_revision"] == 1,obj
 PY
 runtime_status="$(post_status /api/v1/runtime/start "$TMP/runtime-start.json" '{"actor":"smoke"}')"
 [[ "$runtime_status" == "200" ]]
