@@ -146,10 +146,16 @@ cmd_diagnose() {
         command -v "$c" >/dev/null 2>&1 && printf 'OK    %s\n' "$c" || printf 'MISS  %s\n' "$c"
       done
       ;;
-    local-endpoint)
-      for c in curl; do
-        command -v "$c" >/dev/null 2>&1 && printf 'OK    %s\n' "$c" || printf 'MISS  %s\n' "$c"
-      done
+    local-endpoint|http-connect)
+      command -v curl >/dev/null 2>&1 && echo 'OK    curl' || echo 'MISS  curl'
+      ;;
+    mihomo)
+      command -v "${MIHOMO_BIN:-mihomo}" >/dev/null 2>&1 && echo "OK    ${MIHOMO_BIN:-mihomo}" || echo "MISS  ${MIHOMO_BIN:-mihomo}"
+      command -v curl >/dev/null 2>&1 && echo 'OK    curl' || echo 'MISS  curl'
+      ;;
+    sing-box)
+      command -v "${SING_BOX_BIN:-sing-box}" >/dev/null 2>&1 && echo "OK    ${SING_BOX_BIN:-sing-box}" || echo "MISS  ${SING_BOX_BIN:-sing-box}"
+      command -v curl >/dev/null 2>&1 && echo 'OK    curl' || echo 'MISS  curl'
       ;;
     *)
       command -v curl >/dev/null 2>&1 && echo 'OK    curl' || echo 'MISS  curl'
@@ -174,15 +180,21 @@ cmd_env() {
   local no_proxy="${DIRECT_CIDRS:-}"
   [[ -z "${DIRECT_DOMAINS:-}" ]] || no_proxy="${no_proxy:+${no_proxy},}${DIRECT_DOMAINS}"
   [[ -z "${NO_PROXY_EXTRA:-}" ]] || no_proxy="${no_proxy:+${no_proxy},}${NO_PROXY_EXTRA}"
+  local endpoint
+  endpoint="$(backend_endpoint)"
   if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then
     local http="http://${HTTP_BIND}:${HTTP_PORT}"
     printf 'export HTTP_PROXY=%q HTTPS_PROXY=%q http_proxy=%q https_proxy=%q\n' "$http" "$http" "$http" "$http"
+  elif backend_capability http_native >/dev/null 2>&1; then
+    printf 'export HTTP_PROXY=%q HTTPS_PROXY=%q http_proxy=%q https_proxy=%q\n' "$endpoint" "$endpoint" "$endpoint" "$endpoint"
   else
     printf 'unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy\n'
   fi
-  local endpoint
-  endpoint="$(backend_endpoint)"
-  printf 'export ALL_PROXY=%q all_proxy=%q\n' "$endpoint" "$endpoint"
+  if backend_capability socks5 >/dev/null 2>&1; then
+    printf 'export ALL_PROXY=%q all_proxy=%q\n' "$endpoint" "$endpoint"
+  else
+    printf 'unset ALL_PROXY all_proxy\n'
+  fi
   printf 'export NO_PROXY=%q no_proxy=%q\n' "$no_proxy" "$no_proxy"
 }
 cmd_integration() { exec "$ROOT/bin/proxy-agent-integration" "${1:-}"; }

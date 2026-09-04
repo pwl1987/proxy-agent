@@ -140,6 +140,16 @@ config_validate_backend_fields() {
       [[ -r "$config" ]] || config_error "SING_BOX_CONFIG is not readable: $config"
       [[ ! -e "$config" ]] || require_secure_config_file "$config" || config_error "SING_BOX_CONFIG must be owner-readable with no group/other write or other-read access: $config"
       ;;
+    mihomo)
+      local config
+      config="$(expand_home "${MIHOMO_CONFIG:-}")"
+      [[ -n "$config" ]] || config_error 'MIHOMO_CONFIG is required for mihomo'
+      [[ -r "$config" ]] || config_error "MIHOMO_CONFIG is not readable: $config"
+      [[ ! -e "$config" ]] || require_secure_config_file "$config" || config_error "MIHOMO_CONFIG must be owner-readable with no group/other write or other-read access: $config"
+      ;;
+    http-connect)
+      config_validate_proxy_url HTTP_CONNECT_PROXY_URL "${HTTP_CONNECT_PROXY_URL:-}"
+      ;;
   esac
 }
 
