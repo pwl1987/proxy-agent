@@ -91,11 +91,15 @@ assert obj["data"]["revision"] == 1
 PY
 
 echo '--- revision detail response ---'
-curl_unix /api/v1/revisions/1 >"$TMP/revision-detail.json"
-cat "$TMP/revision-detail.json"
-python3 - "$TMP/revision-detail.json" <<'PY'
-import json, sys
-obj=json.load(open(sys.argv[1]))
+python3 - "$SOCKET" <<'PY'
+import json, subprocess, sys
+socket = sys.argv[1]
+raw = subprocess.check_output([
+    "curl", "--silent", "--show-error", "--fail", "--unix-socket", socket,
+    "http://localhost/api/v1/revisions/1",
+])
+obj = json.loads(raw)
+print(raw.decode(), end="")
 assert obj["kind"] == "revision"
 assert obj["data"]["revision"] == 1
 assert obj["data"]["actor"] == "smoke"
