@@ -1,0 +1,19 @@
+[Unit]
+Description=proxy-agent user health check
+After=proxy-agent.service
+Requires=proxy-agent.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/proxy-agent-health
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
