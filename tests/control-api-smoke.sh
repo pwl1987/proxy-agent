@@ -81,6 +81,7 @@ cat >"$TMP/revision.json" <<'EOF'
 {"config":{"schema_version":1,"profile":"default","backend":{"type":"http-connect","options":{"proxy_url":"http://127.0.0.1:8080"}},"listeners":{"socks5":{"bind":"127.0.0.1","port":1080}},"routing":{"direct_cidrs":[],"direct_domains":[],"no_proxy_extra":[],"rules":[]},"health":{"network_required":false,"timeout":10,"retries":1,"backoff":1,"auto_recover":true,"targets":[]},"integrations":{"git":true,"docker":false,"pip":false,"npm":false},"security":{"ssh_host_key_checking":"yes","allow_public_listener":false}},"actor":"smoke","change_summary":"test revision"}
 EOF
 post_json /api/v1/revisions "$(cat "$TMP/revision.json")" >"$TMP/revision-created.json"
+echo '--- revision create response ---'
 cat "$TMP/revision-created.json"
 python3 - "$TMP/revision-created.json" <<'PY'
 import json, sys
@@ -89,7 +90,8 @@ assert obj["kind"] == "revision"
 assert obj["data"]["revision"] == 1
 PY
 
-curl_unix /api/v1/revisions/1 >"$TMP/revision-detail.json"
+echo '--- revision detail response ---'
+curl_unix /api/v1/revisions/1 | tee "$TMP/revision-detail.json"
 python3 - "$TMP/revision-detail.json" <<'PY'
 import json, sys
 obj=json.load(open(sys.argv[1]))
