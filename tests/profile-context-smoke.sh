@@ -26,25 +26,47 @@ LOCAL_PROXY_STATUS_TARGET="https://example.com"
 EOF
 chmod 0600 "$PROFILE_DIR/beta.conf"
 
-check_context() {
-  local name="$1" expected_state="$2" expected_log="$3" expected_config="$4"
+check_explicit_context() {
   PA_PROFILE_DIR="$PROFILE_DIR" PA_STATE_DIR="$BASE_STATE" PA_LOG_DIR="$BASE_LOG" \
     bash -c '
       source "$1/lib/common.sh"
       source "$1/lib/profile.sh"
       source "$1/lib/profile-context.sh"
-      profile_apply_context "$2"
+      profile_apply_context alpha
       printf "%s\n%s\n%s\n%s\n" "$PA_PROFILE" "$PA_CONFIG" "$PA_STATE_DIR" "$PA_LOG_DIR"
-    ' _ "$ROOT" "$name" >"$TMP/$name.out"
-  mapfile -t values <"$TMP/$name.out"
-  [[ "${values[0]}" == "$name" ]]
-  [[ "${values[1]}" == "$expected_config" ]]
+    ' _ "$ROOT" >"$TMP/alpha.out"
+  mapfile -t values <"$TMP/alpha.out"
+  [[ "${values[0]}" == alpha ]]
+  [[ "${values[1]}" == "$PROFILE_DIR/alpha.conf" ]]
+  [[ "${values[2]}" == "$BASE_STATE" ]]
+  [[ "${values[3]}" == "$BASE_LOG" ]]
+}
+
+check_default_context() {
+  local expected_state expected_log
+  if (( EUID == 0 )); then
+    expected_state="/run/proxy-agent/beta"
+    expected_log="/var/log/proxy-agent/beta"
+  else
+    expected_state="${XDG_RUNTIME_DIR:-$HOME/.cache/proxy-agent}/run/beta"
+    expected_log="${XDG_STATE_HOME:-$HOME/.local/state}/proxy-agent/log/beta"
+  fi
+  PA_PROFILE_DIR="$PROFILE_DIR" env -u PA_STATE_DIR -u PA_LOG_DIR -u PA_CONFIG \
+    bash -c '
+      source "$1/lib/common.sh"
+      source "$1/lib/profile.sh"
+      source "$1/lib/profile-context.sh"
+      profile_apply_context beta
+      printf "%s\n%s\n%s\n%s\n" "$PA_PROFILE" "$PA_CONFIG" "$PA_STATE_DIR" "$PA_LOG_DIR"
+    ' _ "$ROOT" >"$TMP/beta.out"
+  mapfile -t values <"$TMP/beta.out"
+  [[ "${values[0]}" == beta ]]
+  [[ "${values[1]}" == "$PROFILE_DIR/beta.conf" ]]
   [[ "${values[2]}" == "$expected_state" ]]
   [[ "${values[3]}" == "$expected_log" ]]
 }
 
-check_context alpha "$BASE_STATE" "$BASE_LOG" "$PROFILE_DIR/alpha.conf"
-# Explicit PA_STATE_DIR/PA_LOG_DIR in the profile must not receive a profile suffix.
-check_context beta "$BASE_STATE/beta" "$BASE_LOG/beta" "$PROFILE_DIR/beta.conf"
+check_explicit_context
+check_default_context
 
 printf 'profile context smoke: PASS\n'
