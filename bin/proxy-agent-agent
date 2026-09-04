@@ -40,15 +40,6 @@ Control Plane 继续负责配置、生命周期、健康与回收。
 EOF
 }
 
-parse_profile() {
-  if [[ "${1:-}" == "--profile" ]]; then
-    [[ -n "${2:-}" ]] || die '用法：--profile <名称>'
-    PROFILE_NAME="$2"
-    shift 2
-  fi
-  printf '%s' "$PROFILE_NAME"
-}
-
 load_profile() {
   local name="$1"
   profile_exists "$name" || die "agent profile not found: $name"
@@ -77,9 +68,7 @@ cmd_install() {
     esac
   done
 
-  if [[ -z "$source_config" ]]; then
-    source_config="${PA_CONFIG:-}"
-  fi
+  source_config="${source_config:-${PA_CONFIG:-}}"
   [[ -n "$source_config" && -r "$source_config" ]] || die '必须提供一个现有配置：--from-config <路径>'
   require_secure_config_file "$source_config"
   PA_CONFIG="$source_config" "$ROOT/bin/proxy-ctl" validate >/dev/null
@@ -164,16 +153,15 @@ cmd_status() {
     esac
   done
   load_profile "$name"
-  local proxy_status
-  if ! proxy_status="$(PA_CONFIG="$PA_CONFIG" "$ROOT/bin/proxy-ctl" --profile "$name" status --json=v2 2>/dev/null)"; then
-    proxy_status='{}'
-  fi
+
+  local proxy_status='{}'
+  proxy_status="$(PA_CONFIG="$PA_CONFIG" "$ROOT/bin/proxy-ctl" --profile "$name" status --json=v2 2>/dev/null || printf '{}')"
   if [[ "$json" == true ]]; then
-    python3 - "$name" "$proxy_status" <<'PY'
+    python3 - "$name" "$proxy_status" "$INTEGRATE_GIT" "$INTEGRATE_DOCKER" "$INTEGRATE_PIP" "$INTEGRATE_NPM" <<'PY'
 import json, sys
-name = sys.argv[1]
+name, raw = sys.argv[1], sys.argv[2]
 try:
-    runtime = json.loads(sys.argv[2])
+    runtime = json.loads(raw)
 except json.JSONDecodeError:
     runtime = {}
 print(json.dumps({
@@ -184,10 +172,10 @@ print(json.dumps({
     "adapter": runtime.get("adapter", {}),
     "health": runtime.get("health", {}),
     "integrations": {
-        "git": bool(globals().get("INTEGRATE_GIT", False)),
-        "docker": bool(globals().get("INTEGRATE_DOCKER", False)),
-        "pip": bool(globals().get("INTEGRATE_PIP", False)),
-        "npm": bool(globals().get("INTEGRATE_NPM", False)),
+        "git": sys.argv[3] == "true",
+        "docker": sys.argv[4] == "true",
+        "pip": sys.argv[5] == "true",
+        "npm": sys.argv[6] == "true",
     },
 }, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
 PY
