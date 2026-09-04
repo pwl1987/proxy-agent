@@ -2,12 +2,30 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=../lib/common.sh
 source "$ROOT/lib/common.sh"
-load_config
+source "$ROOT/lib/profile.sh"
+
+PROFILE_NAME="${PA_PROFILE:-}"
+if [[ "${1:-}" == "--profile" ]]; then
+  [[ -n "${2:-}" ]] || die 'usage: proxy-agent-health [--profile <name>]'
+  PROFILE_NAME="$2"
+  shift 2
+fi
+[[ $# -eq 0 ]] || die "usage: proxy-agent-health [--profile <name>]"
+
+if [[ -n "$PROFILE_NAME" ]]; then
+  profile_load "$PROFILE_NAME"
+  PA_STATE_DIR="${PA_STATE_DIR:-/run/proxy-agent}/${PROFILE_NAME}"
+else
+  load_config
+fi
 
 attempt_test() {
-  "$ROOT/bin/proxy-ctl" test
+  if [[ -n "$PROFILE_NAME" ]]; then
+    "$ROOT/bin/proxy-ctl" --profile "$PROFILE_NAME" test
+  else
+    "$ROOT/bin/proxy-ctl" test
+  fi
 }
 
 retries="${HEALTH_RETRIES:-2}"
@@ -32,7 +50,11 @@ warn "proxy health check failed after $((retries + 1)) attempt(s)"
 
 if [[ "${HEALTH_AUTO_RECOVER:-true}" == "true" ]]; then
   warn 'attempting automatic recovery'
-  "$ROOT/bin/proxy-ctl" restart
+  if [[ -n "$PROFILE_NAME" ]]; then
+    "$ROOT/bin/proxy-ctl" --profile "$PROFILE_NAME" restart
+  else
+    "$ROOT/bin/proxy-ctl" restart
+  fi
   if attempt_test; then
     date +%s >"$PA_STATE_DIR/recovered"
     log 'automatic recovery succeeded'
