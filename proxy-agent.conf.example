@@ -1,14 +1,18 @@
 # proxy-agent v2 example configuration
 # Copy to /etc/proxy-agent/proxy-agent.conf and edit.
 
-# Backend: ssh-socks (current), future: http-connect/sing-box/mihomo
+# Backend: ssh-socks or local-endpoint
 BACKEND="ssh-socks"
 
-# Remote SSH endpoint
+# Remote SSH endpoint (used by ssh-socks)
 REMOTE_HOST="proxy.example.com"
 REMOTE_USER="proxy"
 REMOTE_PORT="22"
 REMOTE_SSH_KEY="~/.ssh/id_ed25519"
+
+# Existing local proxy endpoint (used by local-endpoint)
+# LOCAL_PROXY_URL="http://127.0.0.1:3128"
+# LOCAL_PROXY_STATUS_TARGET="https://example.com"
 
 # Local listeners — loopback is the secure default
 SOCKS_BIND="127.0.0.1"
@@ -16,23 +20,28 @@ SOCKS_PORT="1080"
 
 # Optional HTTP adapter. Disabled by default because it adds an extra daemon.
 # When enabled, proxy-agent will generate/manage a private Privoxy instance
-# forwarding through the local SOCKS5 listener.
+# forwarding through a backend with the socks5 capability.
 HTTP_ENABLED="false"
 HTTP_BIND="127.0.0.1"
 HTTP_PORT="8118"
 PRIVOXY_CONFIG="/etc/proxy-agent/privoxy.conf"
 
-# SSH keepalive
+# SSH keepalive (ssh-socks backend)
 AUTOSSH_MONITOR_PORT="0"
 SSH_SERVER_ALIVE_INTERVAL="30"
 SSH_SERVER_ALIVE_COUNT_MAX="3"
 SSH_STRICT_HOST_KEY_CHECKING="yes"
 SSH_KNOWN_HOSTS="~/.ssh/known_hosts"
 
-# Routing policy
+# Routing policy — legacy compatibility
 DIRECT_CIDRS="127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 DIRECT_DOMAINS="localhost,.local,.cn"
 NO_PROXY_EXTRA=""
+
+# Optional ordered routing rules. Lower priority number wins.
+# Format: priority|ACTION|matcher|pattern
+# matcher: exact, suffix, wildcard, cidr
+# ROUTE_RULES=$'100|DIRECT|suffix|.internal.example\n200|PROXY|wildcard|*.example.net'
 
 # Optional application integration
 INTEGRATE_GIT="true"
