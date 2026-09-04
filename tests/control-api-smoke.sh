@@ -98,7 +98,9 @@ grep -q '"revision":1' "$TMP/revision-detail.json"
 grep -q '"actor":"smoke"' "$TMP/revision-detail.json"
 
 post_json /api/v1/apply '{"revision":1,"if_match_revision":1,"actor":"smoke"}' >"$TMP/applied.json"
-python3 - "$TMP/applied.json" <<'PY'
+echo '--- apply response ---'
+cat "$TMP/applied.json"
+if ! python3 - "$TMP/applied.json" <<'PY'
 import json, sys
 obj=json.load(open(sys.argv[1]))
 assert obj["kind"] == "apply"
@@ -107,6 +109,13 @@ assert obj["data"]["desired_revision"] == 1
 assert obj["data"]["reconcile"]["status"] == "activated"
 assert obj["data"]["reconcile"]["observed_revision"] == 1
 PY
+then
+  echo '--- API stderr ---' >&2
+  cat "$TMP/api.err" >&2 || true
+  echo '--- reconcile state ---' >&2
+  find "$TMP/state" -maxdepth 3 -type f -print -exec sh -c 'echo "--- $1"; cat "$1"' _ {} \; >&2 || true
+  exit 1
+fi
 
 curl_unix /api/v1/status >"$TMP/status-applied.json"
 python3 - "$TMP/status-applied.json" <<'PY'
