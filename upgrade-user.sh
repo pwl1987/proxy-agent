@@ -24,14 +24,14 @@ fi
 
 PREFIX="$PREFIX" BIN="$BIN" XDG_CONFIG_HOME="$CONFIG_HOME" bash "$ROOT/install-user.sh"
 
+PA_CONFIG="$ETC/proxy-agent.conf" "$BIN/proxy-ctl" validate
+
 if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
   systemctl --user daemon-reload
   if $was_active; then
     systemctl --user start "$SERVICE_NAME"
   fi
 fi
-
-PA_CONFIG="$ETC/proxy-agent.conf" "$BIN/proxy-ctl" validate
 
 printf 'Upgraded rootless proxy-agent to %s\n' "$(cat "$ROOT/VERSION")"
 printf 'Config preserved: %s\n' "$ETC/proxy-agent.conf"
