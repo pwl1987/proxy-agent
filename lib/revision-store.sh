@@ -86,9 +86,6 @@ PY
   printf '%s' "$id"
 }
 
-# Atomically compare the revision head and create the new revision while holding
-# the same store lock. This closes the TOCTOU window between an API caller's
-# current-head check and revision creation.
 revision_record_if_match() {
   local expected="$1" config_json="$2" actor="${3:-local}" summary="${4:-configuration change}" validation="${5:-passed}" health="${6:-pending}"
   revision_init
@@ -164,8 +161,6 @@ revision_set_desired() {
   revision_lock_release
 }
 
-# Atomically compare the revision head and set desired state. The comparison
-# and desired-state write must share the same lock as revision creation.
 revision_set_desired_if_match() {
   local expected="$1" id="$2" config_json="$3" dir tmp
   revision_get "$id" >/dev/null || return 1
@@ -189,6 +184,76 @@ revision_set_desired_if_match() {
   printf '%s\n' "$id" >"$tmp"
   mv -f "$tmp" "$(revision_desired_revision_file)"
   revision_lock_release
+}
+
+# Atomically compare the revision head, create the rollback revision from the
+# target revision, and point desired state at the newly-created revision.
+# Return 3 for an optimistic-concurrency conflict, 1 for other failures.
+revision_rollback_if_match() {
+  local expected="$1" target="$2" actor="${3:-local}" summary="${4:-rollback}" dir config_json
+  revision_init
+  [[ "$target" =~ ^[0-9]+$ ]] || return 1
+  dir="$(revision_dir)"
+  [[ -r "$(revision_file "$target")" ]] || return 1
+
+  revision_lock_acquire || return 1
+  local current
+  current="$(revision_current)"
+  if [[ "$expected" != "$current" ]]; then
+    printf 'revision conflict: expected revision %s, current revision is %s\n' "$expected" "$current" >&2
+    revision_lock_release
+    return 3
+  fi
+
+  config_json="$(cat "$(revision_file "$target")")" || { revision_lock_release; return 1; }
+  config_json="$(python3 - "$config_json" <<'PY'
+import json, sys
+print(json.dumps(json.loads(sys.argv[1])["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+PY
+  )" || { revision_lock_release; return 1; }
+
+  local id="$(revision_next_id)" timestamp file tmp previous
+  previous="$current"
+  timestamp="$(date +%s)"
+  file="$(revision_file "$id")"
+  tmp="${file}.tmp.$$"
+  if ! python3 - "$config_json" "$actor" "$summary" "$id" "$previous" "$timestamp" "$target" >"$tmp" <<'PY'
+import json, sys
+config = json.loads(sys.argv[1])
+payload = {
+    "schema_version": 1,
+    "revision": int(sys.argv[4]),
+    "previous_revision": int(sys.argv[5]),
+    "timestamp": int(sys.argv[6]),
+    "actor": sys.argv[2],
+    "change_summary": sys.argv[3],
+    "validation_result": "passed",
+    "health_result": "pending",
+    "rollback_target_revision": int(sys.argv[7]),
+    "config": config,
+}
+print(json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+PY
+  then
+    rm -f "$tmp"
+    revision_lock_release
+    return 1
+  fi
+  mv -f "$tmp" "$file"
+  printf '%s\n' "$id" >"$(revision_head_file)"
+
+  tmp="$(revision_desired_file).tmp.$$"
+  if ! printf '%s\n' "$config_json" >"$tmp"; then
+    rm -f "$tmp"
+    revision_lock_release
+    return 1
+  fi
+  mv -f "$tmp" "$(revision_desired_file)"
+  tmp="$(revision_desired_revision_file).tmp.$$"
+  printf '%s\n' "$id" >"$tmp"
+  mv -f "$tmp" "$(revision_desired_revision_file)"
+  revision_lock_release
+  printf '%s' "$id"
 }
 
 revision_desired() {
