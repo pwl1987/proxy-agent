@@ -10,6 +10,14 @@ Linux 统一 Proxy Control Plane：统一管理代理后端、适配器、分流
 
 中文运维手册：[`docs/OPERATIONS.zh-CN.md`](docs/OPERATIONS.zh-CN.md)
 
+下一阶段架构：[`docs/ARCHITECTURE-NEXT.zh-CN.md`](docs/ARCHITECTURE-NEXT.zh-CN.md)
+
+容器部署：[`docs/CONTAINER.zh-CN.md`](docs/CONTAINER.zh-CN.md)
+
+Host / Container 网络：[`docs/NETWORKING.zh-CN.md`](docs/NETWORKING.zh-CN.md)
+
+发布与回滚：[`docs/RELEASE.zh-CN.md`](docs/RELEASE.zh-CN.md)
+
 > 项目采用“双层语言策略”：面向人的 CLI/TUI/运维文档默认中文；JSON schema、环境变量、backend contract 和机器接口保持稳定英文。
 
 ## 当前能力
