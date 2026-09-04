@@ -30,6 +30,8 @@ jobs:
           bash -n install-user.sh
           bash -n upgrade.sh
           bash -n upgrade-user.sh
+      - name: Typed config smoke
+        run: bash tests/typed-config-smoke.sh
       - name: Backend contract smoke
         run: bash tests/backend-contract-smoke.sh
       - name: HTTP CONNECT smoke
