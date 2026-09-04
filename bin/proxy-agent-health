@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../lib/common.sh
+source "$ROOT/lib/common.sh"
+load_config
+
+attempt_test() {
+  "$ROOT/bin/proxy-ctl" test
+}
+
+retries="${HEALTH_RETRIES:-2}"
+backoff="${HEALTH_BACKOFF:-2}"
+attempt=1
+
+while (( attempt <= retries + 1 )); do
+  if attempt_test; then
+    mkdir -p "$PA_STATE_DIR"
+    date +%s >"$PA_STATE_DIR/healthy"
+    exit 0
+  fi
+  if (( attempt <= retries )); then
+    sleep "$((backoff * attempt))"
+  fi
+  ((attempt += 1))
+done
+
+mkdir -p "$PA_STATE_DIR"
+date +%s >"$PA_STATE_DIR/unhealthy"
+warn "proxy health check failed after $((retries + 1)) attempt(s)"
+
+if [[ "${HEALTH_AUTO_RECOVER:-true}" == "true" ]]; then
+  warn 'attempting automatic recovery'
+  "$ROOT/bin/proxy-ctl" restart
+  if attempt_test; then
+    date +%s >"$PA_STATE_DIR/recovered"
+    log 'automatic recovery succeeded'
+    exit 0
+  fi
+  warn 'automatic recovery failed'
+fi
+
+exit 1
