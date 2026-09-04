@@ -2,27 +2,24 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CLI="$ROOT/bin/proxy-ctl"
+PROFILE_NAME="${PA_PROFILE:-}"
+if [[ "${1:-}" == "--profile" ]]; then
+  [[ -n "${2:-}" ]] || { echo 'usage: proxy-agent-tui [--profile NAME]' >&2; exit 2; }
+  PROFILE_NAME="$2"
+  shift 2
+fi
+[[ $# -eq 0 ]] || { echo 'usage: proxy-agent-tui [--profile NAME]' >&2; exit 2; }
+
+CLI=("$ROOT/bin/proxy-ctl")
+[[ -n "$PROFILE_NAME" ]] && CLI+=(--profile "$PROFILE_NAME")
+STATE_DIR="${PA_STATE_DIR:-/run/proxy-agent}"
+[[ -n "$PROFILE_NAME" ]] && STATE_DIR="$STATE_DIR/$PROFILE_NAME"
 
 [[ -t 0 && -t 1 ]] || { echo 'proxy-agent-tui requires an interactive terminal' >&2; exit 1; }
 command -v tput >/dev/null 2>&1 || { echo 'proxy-agent-tui requires tput' >&2; exit 1; }
 
-load_config() {
-  local config="${PA_CONFIG:-/etc/proxy-agent/proxy-agent.conf}"
-  [[ -r "$config" ]] || return 1
-  # shellcheck disable=SC1090
-  source "$config"
-}
-load_config || true
-
 cols() { tput cols 2>/dev/null || printf '80'; }
-
-cleanup() {
-  tput cnorm 2>/dev/null || true
-  tput sgr0 2>/dev/null || true
-  tput rmcup 2>/dev/null || true
-  printf '\n'
-}
+cleanup() { tput cnorm 2>/dev/null || true; tput sgr0 2>/dev/null || true; tput rmcup 2>/dev/null || true; printf '\n'; }
 trap cleanup EXIT INT TERM
 
 tput smcup
@@ -30,41 +27,31 @@ tput civis
 
 run_action() {
   local action="$1"
-  tput cup 0 0
-  tput ed
-  printf 'proxy-agent action: %s\n\n' "$action"
-  if "$CLI" "$action"; then
-    printf '\nAction completed. Press any key to return.\n'
-  else
-    printf '\nAction failed. Press any key to return.\n'
-  fi
+  tput cup 0 0; tput ed
+  printf 'proxy-agent action: %s%s\n\n' "$action" "${PROFILE_NAME:+ (profile: $PROFILE_NAME)}"
+  if "${CLI[@]}" "$action"; then printf '\nAction completed. Press any key to return.\n'; else printf '\nAction failed. Press any key to return.\n'; fi
   read -rsn1
 }
 
 health_summary() {
   local state='UNKNOWN'
-  if [[ -f "${PA_STATE_DIR:-/run/proxy-agent}/recovered" ]]; then state='RECOVERED'
-  elif [[ -f "${PA_STATE_DIR:-/run/proxy-agent}/healthy" ]]; then state='HEALTHY'
-  elif [[ -f "${PA_STATE_DIR:-/run/proxy-agent}/unhealthy" ]]; then state='UNHEALTHY'
-  fi
+  if [[ -f "$STATE_DIR/recovered" ]]; then state='RECOVERED'; elif [[ -f "$STATE_DIR/healthy" ]]; then state='HEALTHY'; elif [[ -f "$STATE_DIR/unhealthy" ]]; then state='UNHEALTHY'; fi
   printf '%s' "$state"
 }
 
 render() {
-  local width now status health route_info
-  width="$(cols)"
-  now="$(date '+%Y-%m-%d %H:%M:%S')"
-  status="$($CLI status 2>/dev/null || printf 'proxy-agent status unavailable')"
-  health="$(health_summary)"
-  route_info="$($CLI route github.com 2>/dev/null || printf 'UNKNOWN')"
-
-  tput cup 0 0
-  tput ed
+  local width now status health route_info profile_label line
+  width="$(cols)"; now="$(date '+%Y-%m-%d %H:%M:%S')"
+  status="$("${CLI[@]}" status 2>/dev/null || printf 'proxy-agent status unavailable')"
+  health="$(health_summary)"; route_info="$("${CLI[@]}" route github.com 2>/dev/null || printf 'UNKNOWN')"
+  profile_label="${PROFILE_NAME:-default}"
+  tput cup 0 0; tput ed
   printf '╭%*s╮\n' "$((width-2))" '' | tr ' ' '─'
   printf '│  proxy-agent TUI%-*s│\n' "$((width-18))" ''
+  printf '│  profile: %-*s│\n' "$((width-12))" "$profile_label"
   printf '│  %s%-*s│\n' "$now" "$((width-21))" ''
   printf '├%*s┤\n' "$((width-2))" '' | tr ' ' '─'
-  printf '│ %-*s│\n' "$((width-2))" 'RUNTIME' 
+  printf '│ %-*s│\n' "$((width-2))" 'RUNTIME'
   while IFS= read -r line; do printf '│ %-*s│\n' "$((width-2))" "$line"; done <<< "$status"
   printf '│ %-*s│\n' "$((width-2))" "HEALTH: $health"
   printf '│ %-*s│\n' "$((width-2))" "ROUTE:  $route_info"
@@ -77,36 +64,15 @@ render() {
 }
 
 route_prompt() {
-  tput cup 0 0
-  tput ed
-  printf 'Route query (hostname or IPv4): '
-  local target
-  IFS= read -r target
-  [[ -n "$target" ]] || return
-  printf '\n%s\n\nPress any key.' "$($CLI route "$target" 2>&1 || true)"
-  read -rsn1
+  tput cup 0 0; tput ed; printf 'Route query (hostname or IPv4): '
+  local target; IFS= read -r target; [[ -n "$target" ]] || return
+  printf '\n%s\n\nPress any key.' "$("${CLI[@]}" route "$target" 2>&1 || true)"; read -rsn1
 }
 
-integration_view() {
-  tput cup 0 0
-  tput ed
-  "$CLI" integration all 2>&1 || true
-  printf '\nPress any key.'
-  read -rsn1
-}
+integration_view() { tput cup 0 0; tput ed; "${CLI[@]}" integration all 2>&1 || true; printf '\nPress any key.'; read -rsn1; }
 
 while true; do
   render
   IFS= read -rsn1 -t 2 key || key=''
-  case "$key" in
-    s) run_action start ;;
-    x) run_action stop ;;
-    r) run_action restart ;;
-    t) run_action test ;;
-    d) run_action diagnose ;;
-    i) integration_view ;;
-    R) route_prompt ;;
-    q) exit 0 ;;
-    '') ;;
-  esac
+  case "$key" in s) run_action start ;; x) run_action stop ;; r) run_action restart ;; t) run_action test ;; d) run_action diagnose ;; i) integration_view ;; R) route_prompt ;; q) exit 0 ;; '') ;; esac
 done
