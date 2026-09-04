@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import socket
 import socketserver
 import stat
 import subprocess
@@ -67,7 +66,6 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def log_message(self, fmt: str, *args: object) -> None:
-        # Keep the local API quiet by default; systemd/journald can still capture stderr.
         print(f"control-api: {fmt % args}", file=sys.stderr)
 
     def _send(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
@@ -121,7 +119,7 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
             return
         self._send(
             HTTPStatus.NOT_IMPLEMENTED,
-            error_envelope("not_implemented", f"{self.path} requires the 0.3.x revision store")
+            error_envelope("not_implemented", f"{self.path} requires the 0.3.x revision store"),
         )
 
     def _status(self) -> None:
@@ -132,6 +130,7 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         self._send(HTTPStatus.OK, response_envelope("health", {"status": "ok", "transport": "ready"}))
 
     def _capabilities(self) -> None:
+        status = command_json("status", "--json")
         rc, stdout, stderr = run_proxy_ctl("capabilities")
         if rc != 0:
             detail = stderr.decode("utf-8", errors="replace").strip() or "proxy-ctl capabilities failed"
@@ -141,7 +140,7 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
             HTTPStatus.OK,
             response_envelope(
                 "capabilities",
-                {"backend": os.environ.get("BACKEND", "unknown"), "capabilities": capabilities},
+                {"backend": status.get("backend", "unknown"), "capabilities": capabilities},
             ),
         )
 
