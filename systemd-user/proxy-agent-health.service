@@ -5,6 +5,8 @@ Requires=proxy-agent.service
 
 [Service]
 Type=oneshot
+Environment=PA_STATE_DIR=%t/proxy-agent/run
+Environment=PA_LOG_DIR=%t/proxy-agent/log
 ExecStart=@BIN@/proxy-agent-health
 NoNewPrivileges=true
 PrivateTmp=true
