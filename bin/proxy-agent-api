@@ -23,30 +23,24 @@ REVISION_STORE = ROOT / "lib" / "revision-store.sh"
 AUDIT_STORE = ROOT / "lib" / "audit-store.sh"
 MAX_BODY = 1024 * 1024
 
-
 def json_bytes(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
-
 
 def response_envelope(kind: str, payload: Any) -> dict[str, Any]:
     return {"api_version": API_VERSION, "kind": kind, "data": payload}
 
-
 def error_envelope(code: str, message: str) -> dict[str, Any]:
     return {"api_version": API_VERSION, "error": {"code": code, "message": message}}
-
 
 def run_proxy_ctl(*args: str) -> tuple[int, bytes, bytes]:
     p = subprocess.run([str(PROXY_CTL), *args], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     return p.returncode, p.stdout, p.stderr
-
 
 def command_json(*args: str) -> Any:
     rc, stdout, stderr = run_proxy_ctl(*args)
     if rc != 0:
         raise RuntimeError(stderr.decode("utf-8", errors="replace").strip() or "proxy-ctl failed")
     return json.loads(stdout.decode("utf-8"))
-
 
 def revision_call(function: str, *args: str) -> bytes:
     env = os.environ.copy()
@@ -57,14 +51,12 @@ def revision_call(function: str, *args: str) -> bytes:
         raise RuntimeError(p.stderr.decode("utf-8", errors="replace").strip() or f"revision operation failed: {function}")
     return p.stdout
 
-
 def revision_call_rc(function: str, *args: str) -> tuple[int, bytes, bytes]:
     env = os.environ.copy()
     cmd = ["bash", "-c", 'source "$1"; shift; "$FUNC" "$@"', "_", str(REVISION_STORE), *args]
     env["FUNC"] = function
     p = subprocess.run(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     return p.returncode, p.stdout, p.stderr
-
 
 def audit_call(event: dict[str, Any]) -> None:
     text = json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
@@ -73,10 +65,8 @@ def audit_call(event: dict[str, Any]) -> None:
     if p.returncode != 0:
         raise RuntimeError(p.stderr.decode("utf-8", errors="replace").strip() or "audit append failed")
 
-
 def stderr_message(stderr: bytes) -> str:
     return stderr.decode("utf-8", errors="replace").strip()
-
 
 def reconcile(*args: str) -> dict[str, Any]:
     p = subprocess.run([str(RECONCILER), *args], cwd=ROOT, env=os.environ.copy(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
@@ -86,7 +76,6 @@ def reconcile(*args: str) -> dict[str, Any]:
         return json.loads(p.stdout.decode("utf-8"))
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"reconcile returned invalid JSON: {exc}") from exc
-
 
 def observed_state() -> dict[str, Any]:
     state_dir = Path(os.environ.get("PA_STATE_DIR", "/run/proxy-agent"))
@@ -98,18 +87,12 @@ def observed_state() -> dict[str, Any]:
     except (OSError, json.JSONDecodeError):
         return {"status": "unknown", "desired_revision": int(revision_call("revision_desired_revision")), "observed_revision": 0}
 
-
 class ConflictError(Exception):
     pass
-
-
 class ValidationError(Exception):
     pass
-
-
 class ActivationError(Exception):
     pass
-
 
 def safe_audit(event: dict[str, Any]) -> None:
     try:
@@ -117,14 +100,11 @@ def safe_audit(event: dict[str, Any]) -> None:
     except Exception as exc:
         print(f"control-api: audit append failed: {exc}", file=sys.stderr)
 
-
 class ControlRequestHandler(BaseHTTPRequestHandler):
     server_version = "proxy-agent-control/1"
     protocol_version = "HTTP/1.1"
-
     def log_message(self, fmt: str, *args: object) -> None:
         print(f"control-api: {fmt % args}", file=sys.stderr)
-
     def _send(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
         body = json_bytes(payload)
         self.send_response(status)
@@ -133,7 +113,6 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
-
     def _read_json_body(self) -> Any:
         try:
             length = int(self.headers.get("Content-Length", "0"))
@@ -145,238 +124,129 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         if length and len(raw) != length:
             raise ValueError("short request body")
         return json.loads(raw.decode("utf-8")) if raw else None
-
     def do_GET(self) -> None:
-        routes = {
-            "/api/v1/status": self._status,
-            "/api/v1/health": self._health,
-            "/api/v1/capabilities": self._capabilities,
-            "/api/v1/config": self._config,
-            "/api/v1/events": self._events,
-            "/api/v1/metrics": self._metrics,
-            "/api/v1/revisions": self._revisions,
-        }
+        routes = {"/api/v1/status": self._status, "/api/v1/health": self._health, "/api/v1/capabilities": self._capabilities, "/api/v1/config": self._config, "/api/v1/events": self._events, "/api/v1/metrics": self._metrics, "/api/v1/revisions": self._revisions}
         handler = routes.get(self.path)
         if handler is not None:
-            try:
-                handler()
-            except FileNotFoundError:
-                self._send(HTTPStatus.NOT_FOUND, error_envelope("not_found", "revision not found"))
-            except ValidationError as exc:
-                self._send(HTTPStatus.UNPROCESSABLE_ENTITY, error_envelope("invalid_config", str(exc)))
-            except Exception as exc:
-                self._send(HTTPStatus.INTERNAL_SERVER_ERROR, error_envelope("internal_error", str(exc)))
+            try: handler()
+            except FileNotFoundError: self._send(HTTPStatus.NOT_FOUND, error_envelope("not_found", "revision not found"))
+            except ValidationError as exc: self._send(HTTPStatus.UNPROCESSABLE_ENTITY, error_envelope("invalid_config", str(exc)))
+            except Exception as exc: self._send(HTTPStatus.INTERNAL_SERVER_ERROR, error_envelope("internal_error", str(exc)))
             return
         if self.path.startswith("/api/v1/revisions/"):
-            try:
-                self._revision_detail(self.path.rsplit("/", 1)[-1])
-            except ValueError as exc:
-                self._send(HTTPStatus.BAD_REQUEST, error_envelope("invalid_revision", str(exc)))
-            except FileNotFoundError:
-                self._send(HTTPStatus.NOT_FOUND, error_envelope("not_found", "revision not found"))
-            except Exception as exc:
-                self._send(HTTPStatus.INTERNAL_SERVER_ERROR, error_envelope("internal_error", str(exc)))
+            try: self._revision_detail(self.path.rsplit("/", 1)[-1])
+            except ValueError as exc: self._send(HTTPStatus.BAD_REQUEST, error_envelope("invalid_revision", str(exc)))
+            except FileNotFoundError: self._send(HTTPStatus.NOT_FOUND, error_envelope("not_found", "revision not found"))
+            except Exception as exc: self._send(HTTPStatus.INTERNAL_SERVER_ERROR, error_envelope("internal_error", str(exc)))
             return
         self._send(HTTPStatus.NOT_FOUND, error_envelope("not_found", "unknown endpoint"))
-
     def do_POST(self) -> None:
         if self.path not in {"/api/v1/validate", "/api/v1/revisions", "/api/v1/apply", "/api/v1/rollback"}:
-            self._send(HTTPStatus.NOT_FOUND, error_envelope("not_found", "unknown endpoint"))
-            return
+            self._send(HTTPStatus.NOT_FOUND, error_envelope("not_found", "unknown endpoint")); return
         try:
             body = self._read_json_body()
-            if self.path == "/api/v1/validate":
-                self._validate(body)
-                self._send(HTTPStatus.OK, response_envelope("validation", {"valid": True}))
-            elif self.path == "/api/v1/revisions":
-                self._create_revision(body)
-            elif self.path == "/api/v1/apply":
-                self._apply(body)
-            else:
-                self._rollback(body)
-        except json.JSONDecodeError as exc:
-            self._send(HTTPStatus.BAD_REQUEST, error_envelope("invalid_json", str(exc)))
-        except ValidationError as exc:
-            self._send(HTTPStatus.UNPROCESSABLE_ENTITY, error_envelope("invalid_config", str(exc)))
-        except FileNotFoundError:
-            self._send(HTTPStatus.NOT_FOUND, error_envelope("not_found", "revision not found"))
-        except ConflictError as exc:
-            self._send(HTTPStatus.CONFLICT, error_envelope("revision_conflict", str(exc)))
-        except ActivationError as exc:
-            self._send(HTTPStatus.SERVICE_UNAVAILABLE, error_envelope("activation_failed", str(exc)))
-        except ValueError as exc:
-            self._send(HTTPStatus.BAD_REQUEST, error_envelope("invalid_request", str(exc)))
-        except Exception as exc:
-            self._send(HTTPStatus.INTERNAL_SERVER_ERROR, error_envelope("internal_error", str(exc)))
-
+            if self.path == "/api/v1/validate": self._validate(body); self._send(HTTPStatus.OK, response_envelope("validation", {"valid": True}))
+            elif self.path == "/api/v1/revisions": self._create_revision(body)
+            elif self.path == "/api/v1/apply": self._apply(body)
+            else: self._rollback(body)
+        except json.JSONDecodeError as exc: self._send(HTTPStatus.BAD_REQUEST, error_envelope("invalid_json", str(exc)))
+        except ValidationError as exc: self._send(HTTPStatus.UNPROCESSABLE_ENTITY, error_envelope("invalid_config", str(exc)))
+        except FileNotFoundError: self._send(HTTPStatus.NOT_FOUND, error_envelope("not_found", "revision not found"))
+        except ConflictError as exc: self._send(HTTPStatus.CONFLICT, error_envelope("revision_conflict", str(exc)))
+        except ActivationError as exc: self._send(HTTPStatus.SERVICE_UNAVAILABLE, error_envelope("activation_failed", str(exc)))
+        except ValueError as exc: self._send(HTTPStatus.BAD_REQUEST, error_envelope("invalid_request", str(exc)))
+        except Exception as exc: self._send(HTTPStatus.INTERNAL_SERVER_ERROR, error_envelope("internal_error", str(exc)))
     def _status(self) -> None:
         data = command_json("status", "--json")
-        data["control"] = observed_state()
-        data["desired_revision"] = int(revision_call("revision_desired_revision"))
-        data["current_revision"] = int(revision_call("revision_current"))
+        data["control"] = observed_state(); data["desired_revision"] = int(revision_call("revision_desired_revision")); data["current_revision"] = int(revision_call("revision_current"))
         self._send(HTTPStatus.OK, response_envelope("status", data))
-
     def _health(self) -> None:
         self._send(HTTPStatus.OK, response_envelope("health", {"status": "ok", "transport": "ready"}))
-
     def _capabilities(self) -> None:
-        status = command_json("status", "--json")
-        rc, stdout, stderr = run_proxy_ctl("capabilities")
-        if rc != 0:
-            raise RuntimeError(stderr_message(stderr) or "capabilities failed")
+        status = command_json("status", "--json"); rc, stdout, stderr = run_proxy_ctl("capabilities")
+        if rc != 0: raise RuntimeError(stderr_message(stderr) or "capabilities failed")
         caps = [x for x in stdout.decode("utf-8", errors="replace").splitlines() if x]
         self._send(HTTPStatus.OK, response_envelope("capabilities", {"backend": status.get("backend", "unknown"), "capabilities": caps}))
-
     def _config(self) -> None:
         self._send(HTTPStatus.OK, response_envelope("config", command_json("config", "export-typed")))
-
     def _events(self) -> None:
         raw = subprocess.run(["bash", "-c", 'source "$1"; audit_list', "_", str(AUDIT_STORE)], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False).stdout
         events = [json.loads(line) for line in raw.decode("utf-8").splitlines() if line]
         self._send(HTTPStatus.OK, response_envelope("events", events[-100:]))
-
     def _metrics(self) -> None:
         body = b"# HELP proxy_agent_control_api_up Local Control API transport availability\nproxy_agent_control_api_up 1\n"
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
-
+        self.send_response(HTTPStatus.OK); self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8"); self.send_header("Content-Length", str(len(body))); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(body)
     def _revisions(self) -> None:
-        names = revision_call("revision_list").decode("utf-8").splitlines()
-        revisions = [int(name[:-5]) for name in names if name.endswith(".json") and name[:-5].isdigit()]
+        names = revision_call("revision_list").decode("utf-8").splitlines(); revisions = [int(name[:-5]) for name in names if name.endswith(".json") and name[:-5].isdigit()]
         self._send(HTTPStatus.OK, response_envelope("revisions", {"current": int(revision_call("revision_current")), "desired": int(revision_call("revision_desired_revision")), "revisions": revisions}))
-
     def _revision_detail(self, revision_id: str) -> None:
-        if not revision_id.isdigit():
-            raise ValueError("revision must be an unsigned integer")
-        raw = revision_call("revision_get", revision_id)
-        self._send(HTTPStatus.OK, response_envelope("revision", json.loads(raw)))
-
+        if not revision_id.isdigit(): raise ValueError("revision must be an unsigned integer")
+        self._send(HTTPStatus.OK, response_envelope("revision", json.loads(revision_call("revision_get", revision_id))))
     @staticmethod
     def _validate(body: Any) -> None:
-        if not isinstance(body, dict) or not isinstance(body.get("config"), dict):
-            raise ValidationError("body.config must be an object")
-        cfg = body["config"]
-        required = {"schema_version", "backend", "listeners", "health", "integrations", "routing", "security"}
-        missing = sorted(required - cfg.keys())
-        if missing:
-            raise ValidationError(f"missing required config fields: {', '.join(missing)}")
-        if cfg["schema_version"] != 1:
-            raise ValidationError("schema_version must be 1")
-        if not isinstance(cfg["backend"], dict) or not cfg["backend"].get("type"):
-            raise ValidationError("backend.type is required")
-        if not isinstance(cfg["security"], dict):
-            raise ValidationError("security must be an object")
-        if cfg["security"].get("allow_public_listener") is True:
-            raise ValidationError("public listener policy requires an explicit authenticated deployment boundary")
-
+        if not isinstance(body, dict) or not isinstance(body.get("config"), dict): raise ValidationError("body.config must be an object")
+        cfg = body["config"]; required = {"schema_version", "backend", "listeners", "health", "integrations", "routing", "security"}; missing = sorted(required - cfg.keys())
+        if missing: raise ValidationError(f"missing required config fields: {', '.join(missing)}")
+        if cfg["schema_version"] != 1: raise ValidationError("schema_version must be 1")
+        if not isinstance(cfg["backend"], dict) or not cfg["backend"].get("type"): raise ValidationError("backend.type is required")
+        if not isinstance(cfg["security"], dict): raise ValidationError("security must be an object")
+        if cfg["security"].get("allow_public_listener") is True: raise ValidationError("public listener policy requires an explicit authenticated deployment boundary")
     def _create_revision(self, body: Any) -> None:
-        self._validate(body)
-        expected = body.get("if_match_revision")
-        cfg = json.dumps(body["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-        actor = str(body.get("actor") or "local-api")
-        summary = str(body.get("change_summary") or "configuration change")
-        if expected is None:
-            rid = int(revision_call("revision_record", cfg, actor, summary, "passed", "pending"))
+        self._validate(body); expected = body.get("if_match_revision"); cfg = json.dumps(body["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True); actor = str(body.get("actor") or "local-api"); summary = str(body.get("change_summary") or "configuration change")
+        if expected is None: rid = int(revision_call("revision_record", cfg, actor, summary, "passed", "pending"))
         else:
-            expected_text = str(expected)
-            rc, stdout, stderr = revision_call_rc("revision_record_if_match", expected_text, cfg, actor, summary, "passed", "pending")
-            if rc == 3:
-                raise ConflictError(stderr_message(stderr) or f"expected revision {expected_text} does not match current revision")
-            if rc != 0:
-                raise RuntimeError(stderr_message(stderr) or "revision creation failed")
+            rc, stdout, stderr = revision_call_rc("revision_record_if_match", str(expected), cfg, actor, summary, "passed", "pending")
+            if rc == 3: raise ConflictError(stderr_message(stderr) or "revision head conflict")
+            if rc != 0: raise RuntimeError(stderr_message(stderr) or "revision creation failed")
             rid = int(stdout)
-        safe_audit({"schema_version": 1, "event": "revision.created", "revision": rid, "actor": actor, "timestamp": int(time.time()), "change_summary": summary})
-        self._send(HTTPStatus.CREATED, response_envelope("revision", json.loads(revision_call("revision_get", str(rid)))))
-
+        safe_audit({"schema_version": 1, "event": "revision.created", "revision": rid, "actor": actor, "timestamp": int(time.time()), "change_summary": summary}); self._send(HTTPStatus.CREATED, response_envelope("revision", json.loads(revision_call("revision_get", str(rid)))))
     def _apply(self, body: Any) -> None:
-        revision = int(body.get("revision", 0)) if isinstance(body, dict) else 0
-        expected = body.get("if_match_revision") if isinstance(body, dict) else None
-        if revision <= 0:
-            raise ValueError("revision is required")
-        raw = revision_call("revision_get", str(revision))
-        obj = json.loads(raw)
-        cfg = json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True)
-        if expected is None:
-            revision_call("revision_set_desired", str(revision), cfg)
+        revision = int(body.get("revision", 0)) if isinstance(body, dict) else 0; expected = body.get("if_match_revision") if isinstance(body, dict) else None
+        if revision <= 0: raise ValueError("revision is required")
+        obj = json.loads(revision_call("revision_get", str(revision))); cfg = json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        if expected is None: revision_call("revision_set_desired", str(revision), cfg)
         else:
-            expected_text = str(expected)
-            rc, _, stderr = revision_call_rc("revision_set_desired_if_match", expected_text, str(revision), cfg)
-            if rc == 3:
-                raise ConflictError(stderr_message(stderr) or f"expected revision {expected_text} does not match current revision")
-            if rc != 0:
-                raise RuntimeError(stderr_message(stderr) or "desired-state update failed")
+            rc, _, stderr = revision_call_rc("revision_set_desired_if_match", str(expected), str(revision), cfg)
+            if rc == 3: raise ConflictError(stderr_message(stderr) or "revision head conflict")
+            if rc != 0: raise RuntimeError(stderr_message(stderr) or "desired-state update failed")
         actor = str(body.get("actor") or "local-api")
-        try:
-            result = reconcile("--activate")
+        try: result = reconcile("--activate")
         except Exception as exc:
-            message = str(exc)
-            safe_audit({"schema_version": 1, "event": "desired_state.activation_failed", "revision": revision, "actor": actor, "timestamp": int(time.time()), "status": "failed", "error": message})
-            raise ActivationError(message) from exc
-        safe_audit({"schema_version": 1, "event": "desired_state.activated", "revision": revision, "actor": actor, "timestamp": int(time.time()), "status": result.get("status")})
-        self._send(HTTPStatus.ACCEPTED, response_envelope("apply", {"revision": revision, "desired_revision": int(revision_call("revision_desired_revision")), "reconcile": result}))
-
+            message = str(exc); safe_audit({"schema_version": 1, "event": "desired_state.activation_failed", "revision": revision, "actor": actor, "timestamp": int(time.time()), "status": "failed", "error": message}); raise ActivationError(message) from exc
+        safe_audit({"schema_version": 1, "event": "desired_state.activated", "revision": revision, "actor": actor, "timestamp": int(time.time()), "status": result.get("status")}); self._send(HTTPStatus.ACCEPTED, response_envelope("apply", {"revision": revision, "desired_revision": int(revision_call("revision_desired_revision")), "reconcile": result}))
     def _rollback(self, body: Any) -> None:
-        if not isinstance(body, dict) or not body.get("revision"):
-            raise ValueError("revision is required")
-        target = int(body["revision"])
-        current = int(revision_call("revision_current"))
-        expected = body.get("if_match_revision")
-        if expected is not None and int(expected) != current:
-            raise ConflictError(f"expected revision {expected}, current revision is {current}")
-        raw = revision_call("revision_get", str(target))
-        obj = json.loads(raw)
-        actor = str(body.get("actor") or "local-api")
-        summary = f"rollback to revision {target}"
-        rid = int(revision_call("revision_record", json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True), actor, summary, "passed", "pending"))
-        revision_call("revision_set_desired", str(rid), json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True))
-        try:
-            result = reconcile("--activate")
+        if not isinstance(body, dict) or not body.get("revision"): raise ValueError("revision is required")
+        target = int(body["revision"]); expected = body.get("if_match_revision"); actor = str(body.get("actor") or "local-api"); summary = f"rollback to revision {target}"
+        if expected is None:
+            obj = json.loads(revision_call("revision_get", str(target))); cfg = json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True); rid = int(revision_call("revision_record", cfg, actor, summary, "passed", "pending")); revision_call("revision_set_desired", str(rid), cfg)
+        else:
+            rc, stdout, stderr = revision_call_rc("revision_rollback_if_match", str(expected), str(target), actor, summary)
+            if rc == 3: raise ConflictError(stderr_message(stderr) or "revision head conflict")
+            if rc != 0: raise RuntimeError(stderr_message(stderr) or "rollback revision creation failed")
+            rid = int(stdout)
+        try: result = reconcile("--activate")
         except Exception as exc:
-            message = str(exc)
-            safe_audit({"schema_version": 1, "event": "rollback.activation_failed", "revision": rid, "target_revision": target, "actor": actor, "timestamp": int(time.time()), "status": "failed", "error": message})
-            raise ActivationError(message) from exc
-        safe_audit({"schema_version": 1, "event": "rollback.activated", "revision": rid, "target_revision": target, "actor": actor, "timestamp": int(time.time()), "status": result.get("status")})
-        self._send(HTTPStatus.ACCEPTED, response_envelope("rollback", {"revision": rid, "target_revision": target, "reconcile": result}))
-
+            message = str(exc); safe_audit({"schema_version": 1, "event": "rollback.activation_failed", "revision": rid, "target_revision": target, "actor": actor, "timestamp": int(time.time()), "status": "failed", "error": message}); raise ActivationError(message) from exc
+        safe_audit({"schema_version": 1, "event": "rollback.activated", "revision": rid, "target_revision": target, "actor": actor, "timestamp": int(time.time()), "status": result.get("status")}); self._send(HTTPStatus.ACCEPTED, response_envelope("rollback", {"revision": rid, "target_revision": target, "reconcile": result}))
 
 class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     daemon_threads = True
 
-
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--socket", default=os.environ.get("PA_API_SOCKET", "/run/proxy-agent/control.sock"))
-    return parser.parse_args()
-
+    parser = argparse.ArgumentParser(); parser.add_argument("--socket", default=os.environ.get("PA_API_SOCKET", "/run/proxy-agent/control.sock")); return parser.parse_args()
 
 def main() -> int:
-    args = parse_args()
-    socket_path = Path(args.socket)
-    socket_path.parent.mkdir(parents=True, exist_ok=True)
+    args = parse_args(); socket_path = Path(args.socket); socket_path.parent.mkdir(parents=True, exist_ok=True)
     if socket_path.exists():
-        if not stat.S_ISSOCK(socket_path.stat().st_mode):
-            print(f"refusing to replace non-socket path: {socket_path}", file=sys.stderr)
-            return 2
+        if not stat.S_ISSOCK(socket_path.stat().st_mode): print(f"refusing to replace non-socket path: {socket_path}", file=sys.stderr); return 2
         socket_path.unlink()
-    server = UnixHTTPServer(str(socket_path), ControlRequestHandler)
-    os.chmod(socket_path, 0o600)
-    print(f"control-api listening on {socket_path}", file=sys.stderr)
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
+    server = UnixHTTPServer(str(socket_path), ControlRequestHandler); os.chmod(socket_path, 0o600); print(f"control-api listening on {socket_path}", file=sys.stderr)
+    try: server.serve_forever()
+    except KeyboardInterrupt: pass
     finally:
         server.server_close()
-        try:
-            socket_path.unlink()
-        except FileNotFoundError:
-            pass
+        try: socket_path.unlink()
+        except FileNotFoundError: pass
     return 0
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+if __name__ == "__main__": raise SystemExit(main())
