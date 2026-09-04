@@ -9,7 +9,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ $EUID -eq 0 ]] || { echo 'install.sh must run as root' >&2; exit 1; }
 
 install -d -m 0755 "$PREFIX" "$ETC" "$BIN"
-cp -a "$ROOT/bin" "$ROOT/lib" "$ROOT/backends" "$PREFIX/"
+cp -a "$ROOT/bin" "$ROOT/lib" "$ROOT/backends" "$ROOT/adapters" "$PREFIX/"
 install -m 0644 "$ROOT/proxy-agent.conf.example" "$ETC/proxy-agent.conf.example"
 if [[ ! -e "$ETC/proxy-agent.conf" ]]; then
   install -m 0600 "$ROOT/proxy-agent.conf.example" "$ETC/proxy-agent.conf"
