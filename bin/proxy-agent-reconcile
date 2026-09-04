@@ -93,6 +93,24 @@ def bootstrap_desired() -> int:
     return revision
 
 
+def runtime_requires_stop(config: Path) -> bool:
+    """Return true only when the previous runtime owns a stoppable process/adapter."""
+    backend = ""
+    http_enabled = "false"
+    try:
+        for raw_line in config.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if line.startswith("BACKEND="):
+                backend = line.split("=", 1)[1].strip().strip("\"'")
+            elif line.startswith("HTTP_ENABLED="):
+                http_enabled = line.split("=", 1)[1].strip().strip("\"'")
+    except OSError:
+        return True
+    if http_enabled == "true":
+        return True
+    return backend in {"ssh-socks", "sing-box", "mihomo"}
+
+
 def activate(candidate_config: Path, runtime_config: Path, desired_revision: int, state_path: Path) -> dict[str, object]:
     backup = runtime_config.with_name(f".{runtime_config.name}.previous")
     had_previous = runtime_config.exists()
@@ -103,7 +121,7 @@ def activate(candidate_config: Path, runtime_config: Path, desired_revision: int
         shutil.copy2(runtime_config, backup)
         previous_source = backup
 
-    if previous_source is not None:
+    if previous_source is not None and runtime_requires_stop(previous_source):
         old_stop = run_proxy_ctl(previous_source, "stop")
         if old_stop.returncode:
             if backup.exists():
@@ -119,9 +137,10 @@ def activate(candidate_config: Path, runtime_config: Path, desired_revision: int
     except Exception as exc:
         if had_previous and backup.exists():
             os.replace(backup, runtime_config)
-            restored = run_proxy_ctl(runtime_config, "start")
-            if restored.returncode:
-                raise RuntimeError(f"{exc}; rollback runtime start also failed") from exc
+            if runtime_requires_stop(runtime_config):
+                restored = run_proxy_ctl(runtime_config, "start")
+                if restored.returncode:
+                    raise RuntimeError(f"{exc}; rollback runtime start also failed") from exc
         elif runtime_config.exists():
             runtime_config.unlink()
         raise
