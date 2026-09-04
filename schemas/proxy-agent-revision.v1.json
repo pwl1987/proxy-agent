@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/pwl1987/proxy-agent/schema/proxy-agent-revision.v1.json",
+  "title": "proxy-agent revision v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "revision", "previous_revision", "timestamp", "actor", "change_summary", "validation_result", "health_result", "config"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "revision": {"type": "integer", "minimum": 1},
+    "previous_revision": {"type": "integer", "minimum": 0},
+    "timestamp": {"type": "integer", "minimum": 0},
+    "actor": {"type": "string", "minLength": 1},
+    "change_summary": {"type": "string", "minLength": 1},
+    "validation_result": {"type": "string", "enum": ["passed", "failed"]},
+    "health_result": {"type": "string", "enum": ["pending", "passed", "failed", "unknown"]},
+    "config": {
+      "type": "object",
+      "required": ["schema_version", "backend", "listeners", "health", "integrations", "routing", "security"]
+    }
+  }
+}
