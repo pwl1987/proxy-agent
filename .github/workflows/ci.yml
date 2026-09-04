@@ -35,6 +35,8 @@ jobs:
         run: bash tests/typed-config-smoke.sh
       - name: Legacy to typed config smoke
         run: bash tests/legacy-typed-config-smoke.sh
+      - name: Typed config CLI smoke
+        run: bash tests/typed-config-cli-smoke.sh
       - name: Backend capability manifest smoke
         run: bash tests/backend-capability-manifest-smoke.sh
       - name: Backend contract smoke
@@ -79,7 +81,7 @@ jobs:
           grep -q '^ProtectHome=read-only$' systemd-user/proxy-agent.service
           grep -q '^ExecStart=@BIN@/proxy-ctl --profile %i run$' systemd-user/proxy-agent@.service
           grep -q '^Environment=PA_STATE_DIR=%t/proxy-agent/run/%i$' systemd-user/proxy-agent@.service
-          grep -q '^ExecStart=@BIN@/proxy-agent-health --profile %i$' systemd-user/proxy-agent-health@.service
+          grep -q '^ExecStart=@BIN@/proxy-agent-health --profile %i$' systemd-user/proxy-agent@.service
           grep -q '^Unit=proxy-agent-health@%i.service$' systemd-user/proxy-agent-health@.timer
       - name: Functional smoke suite
         run: bash tests/smoke.sh
