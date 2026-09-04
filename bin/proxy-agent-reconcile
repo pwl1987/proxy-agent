@@ -33,6 +33,10 @@ def atomic_write(path: Path, content: str, mode: int = 0o600) -> None:
 
 def main() -> int:
     state_dir = Path(os.environ.get("PA_STATE_DIR", "/run/proxy-agent"))
+    profile = os.environ.get("PA_PROFILE", "")
+    if profile and os.environ.get("PA_STATE_DIR_EXPLICIT", "false") != "true":
+        state_dir = state_dir / profile
+
     desired_revision = int(call_store("revision_desired_revision"))
     if desired_revision == 0:
         print(json.dumps({"schema_version": 1, "status": "idle", "desired_revision": 0, "observed_revision": 0}, separators=(",", ":")))
