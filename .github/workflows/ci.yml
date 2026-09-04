@@ -76,10 +76,33 @@ jobs:
       - name: CLI policy smoke
         run: |
           mkdir -p /tmp/proxy-agent
-          cp proxy-agent.conf.example /tmp/proxy-agent/proxy-agent.conf
+          cat >/tmp/proxy-agent/proxy-agent.conf <<'EOF'
+          BACKEND="local-endpoint"
+          LOCAL_PROXY_URL="http://127.0.0.1:3128"
+          LOCAL_PROXY_STATUS_TARGET=""
+          SOCKS_BIND="127.0.0.1"
+          SOCKS_PORT="1080"
+          HTTP_ENABLED="false"
+          HTTP_BIND="127.0.0.1"
+          HTTP_PORT="8118"
+          SSH_STRICT_HOST_KEY_CHECKING="yes"
+          DIRECT_CIDRS=""
+          DIRECT_DOMAINS=""
+          NO_PROXY_EXTRA=""
+          ROUTE_RULES=""
+          HEALTH_TARGETS=""
+          HEALTH_NETWORK_REQUIRED="false"
+          HEALTH_TIMEOUT="10"
+          HEALTH_RETRIES="1"
+          HEALTH_BACKOFF="1"
+          HEALTH_AUTO_RECOVER="true"
+          INTEGRATE_GIT="true"
+          INTEGRATE_DOCKER="false"
+          INTEGRATE_PIP="false"
+          INTEGRATE_NPM="false"
+          EOF
+          sed -i 's/^          //' /tmp/proxy-agent/proxy-agent.conf
           chmod 0600 /tmp/proxy-agent/proxy-agent.conf
-          sed -i 's/^BACKEND=.*/BACKEND="local-endpoint"/' /tmp/proxy-agent/proxy-agent.conf
-          sed -i 's#^LOCAL_PROXY_URL=.*#LOCAL_PROXY_URL="http://127.0.0.1:3128"#' /tmp/proxy-agent/proxy-agent.conf
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl diagnose
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl route example.com
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl route example.cn
