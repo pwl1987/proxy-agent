@@ -3,6 +3,22 @@ set -euo pipefail
 
 # SSH -> local SOCKS5 backend. Intended to be sourced by proxy-ctl.
 
+backend_ssh_socks_capability() {
+  case "$1" in
+    socks5|dynamic_dns|stream_proxy) return 0 ;;
+    http_native) return 1 ;;
+    *) return 1 ;;
+  esac
+}
+
+backend_ssh_socks_capabilities() {
+  printf '%s\n' socks5 dynamic_dns stream_proxy
+}
+
+backend_ssh_socks_endpoint() {
+  printf 'socks5h://%s:%s' "$SOCKS_BIND" "$SOCKS_PORT"
+}
+
 backend_ssh_socks_validate() {
   : "${REMOTE_HOST:?REMOTE_HOST is required}"
   : "${REMOTE_USER:?REMOTE_USER is required}"
