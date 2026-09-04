@@ -133,6 +133,13 @@ config_validate_backend_fields() {
       config_validate_proxy_url LOCAL_PROXY_URL "${LOCAL_PROXY_URL:-}"
       [[ -z "${LOCAL_PROXY_STATUS_TARGET:-}" || "${LOCAL_PROXY_STATUS_TARGET}" =~ ^https?://[^[:space:]]+$ ]] || config_error 'LOCAL_PROXY_STATUS_TARGET must be an http(s) URL'
       ;;
+    sing-box)
+      local config
+      config="$(expand_home "${SING_BOX_CONFIG:-}")"
+      [[ -n "$config" ]] || config_error 'SING_BOX_CONFIG is required for sing-box'
+      [[ -r "$config" ]] || config_error "SING_BOX_CONFIG is not readable: $config"
+      [[ ! -e "$config" ]] || require_secure_config_file "$config" || config_error "SING_BOX_CONFIG must be owner-readable with no group/other write or other-read access: $config"
+      ;;
   esac
 }
 
