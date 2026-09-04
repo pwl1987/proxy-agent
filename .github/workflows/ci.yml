@@ -29,6 +29,8 @@ jobs:
           bash -n install-user.sh
       - name: Backend contract smoke
         run: bash tests/backend-contract-smoke.sh
+      - name: HTTP CONNECT smoke
+        run: bash tests/http-connect-smoke.sh
       - name: systemd unit contract smoke
         run: |
           for unit in systemd/*.service systemd/*.timer systemd-user/*.service systemd-user/*.timer; do
