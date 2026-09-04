@@ -20,23 +20,7 @@ ln -sf "$PREFIX/bin/proxy-agent-profile" "$BIN/proxy-agent-profile"
 ln -sf "$PREFIX/bin/proxy-agent-version" "$BIN/proxy-agent-version"
 
 install -d -m 0755 /etc/systemd/system
-cat >/etc/systemd/system/proxy-agent.service <<EOF
-[Unit]
-Description=proxy-agent universal proxy backend
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart=/bin/bash $PREFIX/bin/proxy-ctl start
-ExecStop=/bin/bash $PREFIX/bin/proxy-ctl stop
-ExecReload=/bin/bash $PREFIX/bin/proxy-ctl restart
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
+sed "s#@PREFIX@#$PREFIX#g" "$ROOT/systemd/proxy-agent.service" >/etc/systemd/system/proxy-agent.service
 sed "s#@PREFIX@#$PREFIX#g" "$ROOT/systemd/proxy-agent-health.service" >/etc/systemd/system/proxy-agent-health.service
 install -m 0644 "$ROOT/systemd/proxy-agent-health.timer" /etc/systemd/system/proxy-agent-health.timer
 
