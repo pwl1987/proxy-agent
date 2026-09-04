@@ -25,3 +25,10 @@ integration_enabled() {
     *) return 1 ;;
   esac
 }
+
+integration_require_http() {
+  [[ "${HTTP_ENABLED:-false}" == "true" ]] || {
+    printf 'WARNING: %s integration requires HTTP_ENABLED=true; SOCKS-only mode is not supported by this adapter.\n' "$1" >&2
+    return 1
+  }
+}
