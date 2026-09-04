@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import socketserver
 import stat
 import subprocess
@@ -26,6 +27,7 @@ COMMON = ROOT / "lib" / "common.sh"
 PROFILE = ROOT / "lib" / "profile.sh"
 PROFILE_CONTEXT = ROOT / "lib" / "profile-context.sh"
 MAX_BODY = 1024 * 1024
+PROFILE_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def json_bytes(payload: dict[str, Any]) -> bytes:
@@ -44,15 +46,12 @@ def profile_env(profile_name: str | None) -> dict[str, str]:
     env = os.environ.copy()
     if not profile_name:
         return env
+    if not PROFILE_RE.fullmatch(profile_name):
+        raise ValueError("invalid profile name")
     cmd = [
-        "bash",
-        "-c",
+        "bash", "-c",
         'source "$1"; source "$2"; source "$3"; profile_apply_context "$4"; printf "%s\\n%s\\n%s\\n%s\\n" "$PA_PROFILE" "$PA_CONFIG" "$PA_STATE_DIR" "$PA_LOG_DIR"',
-        "_",
-        str(COMMON),
-        str(PROFILE),
-        str(PROFILE_CONTEXT),
-        profile_name,
+        "_", str(COMMON), str(PROFILE), str(PROFILE_CONTEXT), profile_name,
     ]
     p = subprocess.run(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
     if p.returncode != 0:
@@ -67,18 +66,20 @@ def profile_env(profile_name: str | None) -> dict[str, str]:
     return env
 
 
-def run_proxy_ctl(profile_name: str | None, *args: str) -> tuple[int, bytes, bytes]:
+def run_proxy_ctl(profile_name: str | None, *args: str, config_path: str | None = None) -> tuple[int, bytes, bytes]:
     env = profile_env(profile_name)
     command = [str(PROXY_CTL)]
-    if profile_name:
+    if profile_name and config_path is None:
         command += ["--profile", profile_name]
+    if config_path is not None:
+        env["PA_CONFIG"] = config_path
     command += list(args)
     p = subprocess.run(command, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     return p.returncode, p.stdout, p.stderr
 
 
-def command_json(profile_name: str | None, *args: str) -> Any:
-    rc, stdout, stderr = run_proxy_ctl(profile_name, *args)
+def command_json(profile_name: str | None, *args: str, config_path: str | None = None) -> Any:
+    rc, stdout, stderr = run_proxy_ctl(profile_name, *args, config_path=config_path)
     if rc != 0:
         raise RuntimeError(stderr.decode("utf-8", errors="replace").strip() or "proxy-ctl failed")
     return json.loads(stdout.decode("utf-8"))
@@ -186,40 +187,27 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         return json.loads(raw.decode("utf-8")) if raw else None
 
     def _profile_from_path(self) -> str | None:
-        query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
-        values = query.get("profile", [])
+        values = parse_qs(urlsplit(self.path).query, keep_blank_values=True).get("profile", [])
         if not values or not values[0]:
             return None
-        name = values[0]
-        if not name.isidentifier() and not __import__("re").fullmatch(r"[A-Za-z0-9._-]+", name):
+        if not PROFILE_RE.fullmatch(values[0]):
             raise ValueError("invalid profile name")
-        return name
+        return values[0]
 
-    def _profile_from_body(self, body: Any) -> str | None:
+    @staticmethod
+    def _profile_from_body(body: Any) -> str | None:
         if not isinstance(body, dict) or body.get("profile") in (None, ""):
             return None
         name = str(body["profile"])
-        if not __import__("re").fullmatch(r"[A-Za-z0-9._-]+", name):
+        if not PROFILE_RE.fullmatch(name):
             raise ValueError("invalid profile name")
         return name
 
-    def _dispatch_profile(self, body: Any = None) -> str | None:
-        profile = self._profile_from_body(body) if body is not None else self._profile_from_path()
-        return profile
-
     def do_GET(self) -> None:
         try:
-            profile = self._dispatch_profile()
+            profile = self._profile_from_path()
             path = urlsplit(self.path).path
-            routes = {
-                "/api/v1/status": self._status,
-                "/api/v1/health": self._health,
-                "/api/v1/capabilities": self._capabilities,
-                "/api/v1/config": self._config,
-                "/api/v1/events": self._events,
-                "/api/v1/metrics": self._metrics,
-                "/api/v1/revisions": self._revisions,
-            }
+            routes = {"/api/v1/status": self._status, "/api/v1/health": self._health, "/api/v1/capabilities": self._capabilities, "/api/v1/config": self._config, "/api/v1/events": self._events, "/api/v1/metrics": self._metrics, "/api/v1/revisions": self._revisions}
             handler = routes.get(path)
             if handler is not None:
                 handler(profile)
@@ -243,7 +231,7 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
             return
         try:
             body = self._read_json_body()
-            profile = self._dispatch_profile(body)
+            profile = self._profile_from_body(body)
             path = urlsplit(self.path).path
             if path == "/api/v1/validate":
                 self._validate(body)
@@ -270,42 +258,29 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
             self._send(HTTPStatus.INTERNAL_SERVER_ERROR, error_envelope("internal_error", str(exc)))
 
     def _status(self, profile: str | None) -> None:
-        data = command_json(profile, "status", "--json")
-        data["control"] = observed_state(profile)
+        observed = observed_state(profile)
+        runtime_config = observed.get("runtime_config") if isinstance(observed, dict) else None
+        data = command_json(profile, "status", "--json", config_path=runtime_config if runtime_config else None)
+        data["control"] = observed
         data["desired_revision"] = int(revision_call(profile, "revision_desired_revision"))
         data["current_revision"] = int(revision_call(profile, "revision_current"))
         self._send(HTTPStatus.OK, response_envelope("status", data))
 
     def _health(self, profile: str | None) -> None:
-        runtime = command_json(profile, "status", "--json=v2")
+        observed = observed_state(profile)
+        runtime_config = observed.get("runtime_config") if isinstance(observed, dict) else None
+        runtime = command_json(profile, "status", "--json=v2", config_path=runtime_config if runtime_config else None)
         backend = runtime.get("backend", {}) if isinstance(runtime, dict) else {}
         adapter = runtime.get("adapter", {}) if isinstance(runtime, dict) else {}
         backend_ready = backend.get("status") == "ready"
         http_enabled = adapter.get("enabled") is True
         adapter_ready = (not http_enabled) or adapter.get("status") == "ready"
-        observed = observed_state(profile)
         desired_revision = int(revision_call(profile, "revision_desired_revision"))
         observed_revision = int(observed.get("observed_revision", 0))
         revision_ready = desired_revision == observed_revision
         readiness = "ready" if backend_ready and adapter_ready and revision_ready else "not_ready"
         status = "ok" if readiness == "ready" else "degraded"
-        self._send(
-            HTTPStatus.OK,
-            response_envelope(
-                "health",
-                {
-                    "status": status,
-                    "transport": "ready",
-                    "readiness": readiness,
-                    "runtime": {
-                        "backend": backend.get("status", "unknown"),
-                        "adapter": adapter.get("status", "disabled") if http_enabled else "disabled",
-                    },
-                    "desired_revision": desired_revision,
-                    "observed_revision": observed_revision,
-                },
-            ),
-        )
+        self._send(HTTPStatus.OK, response_envelope("health", {"status": status, "transport": "ready", "readiness": readiness, "runtime": {"backend": backend.get("status", "unknown"), "adapter": adapter.get("status", "disabled") if http_enabled else "disabled"}, "desired_revision": desired_revision, "observed_revision": observed_revision}))
 
     def _capabilities(self, profile: str | None) -> None:
         status = command_json(profile, "status", "--json")
