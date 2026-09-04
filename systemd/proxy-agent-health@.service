@@ -1,0 +1,7 @@
+[Unit]
+Description=proxy-agent health check for profile %i
+After=proxy-agent@%i.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash @PREFIX@/bin/proxy-agent-health --profile %i
