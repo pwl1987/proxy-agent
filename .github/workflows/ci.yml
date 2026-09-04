@@ -86,7 +86,11 @@ jobs:
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl status --json=v2
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl config export-typed >/tmp/proxy-agent/typed.json
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl health-history --limit 1
-          if PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl doctor >/tmp/proxy-agent/doctor.out 2>&1; then
+          set +e
+          PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl doctor >/tmp/proxy-agent/doctor.out 2>&1
+          doctor_rc=$?
+          set -e
+          if [[ "$doctor_rc" -eq 0 ]]; then
             echo 'doctor unexpectedly passed' >&2
             cat /tmp/proxy-agent/doctor.out >&2
             exit 1
