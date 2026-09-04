@@ -16,7 +16,8 @@ RUN apt-get update \
     && groupadd --system "$SERVICE_GROUP" \
     && useradd --system --gid "$SERVICE_GROUP" --home-dir "/var/lib/$SERVICE_USER" --create-home --shell /usr/sbin/nologin "$SERVICE_USER" \
     && install -d -o "$SERVICE_USER" -g "$SERVICE_GROUP" -m 0750 /run/proxy-agent /var/log/proxy-agent \
-    && install -d -o root -g "$SERVICE_GROUP" -m 0750 /etc/proxy-agent /etc/proxy-agent/profiles /opt/proxy-agent
+    && install -d -o root -g "$SERVICE_GROUP" -m 0750 /etc/proxy-agent /etc/proxy-agent/profiles \
+    && install -d -o root -g root -m 0755 /opt/proxy-agent
 
 COPY bin /opt/proxy-agent/bin
 COPY lib /opt/proxy-agent/lib
