@@ -70,7 +70,7 @@ backend_ssh_socks_validate() {
 
 backend_ssh_socks_start() {
   backend_ssh_socks_validate
-  mkdir -p "$PA_STATE_DIR"
+  mkdir -p "$PA_STATE_DIR" "$PA_LOG_DIR"
 
   local existing_pid pid_file key
   pid_file="$(backend_ssh_socks_pid_file)"
