@@ -32,6 +32,7 @@ chmod 0755 "$TMP/mihomo"
 source "$ROOT/lib/common.sh"
 source "$ROOT/lib/backend.sh"
 source "$ROOT/backends/mihomo.sh"
+source "$ROOT/backends/http-connect.sh"
 
 BACKEND=mihomo
 SOCKS_BIND=127.0.0.1
@@ -48,4 +49,13 @@ backend_mihomo_managed
 ! backend_mihomo_liveness
 [[ "$(backend_mihomo_capabilities | paste -sd, -)" == 'socks5,stream_proxy' ]]
 
-echo 'PASS mihomo backend contract'
+BACKEND=http-connect
+HTTP_CONNECT_PROXY_URL='http://127.0.0.1:3128'
+backend_http_connect_validate
+[[ "$(backend_http_connect_endpoint)" == 'http://127.0.0.1:3128' ]]
+! backend_http_connect_managed
+! backend_http_connect_pid >/dev/null 2>&1
+backend_http_connect_liveness
+[[ "$(backend_http_connect_capabilities | paste -sd, -)" == 'http_native,stream_proxy' ]]
+
+echo 'PASS backend contract smoke'
