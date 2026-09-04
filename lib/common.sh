@@ -13,6 +13,25 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
 }
 
+config_file_secure() {
+  local path="$1" mode owner group group_name
+  [[ -f "$path" ]] || return 1
+  mode="$(stat -c '%a' "$path" 2>/dev/null || true)"
+  owner="$(stat -c '%U' "$path" 2>/dev/null || true)"
+  group="$(stat -c '%G' "$path" 2>/dev/null || true)"
+  [[ "$mode" =~ ^[0-9]+$ ]] || return 1
+  (( (10#$mode % 10) == 0 )) || return 1
+  (( ((10#$mode / 10) % 10) == 0 )) || return 1
+  group_name="$(id -gn 2>/dev/null || true)"
+  [[ "$owner" == root || "$owner" == "$(id -un 2>/dev/null || true)" ]] || return 1
+  [[ "$group" == root || "$group" == "$group_name" ]] || return 1
+}
+
+require_secure_config_file() {
+  local path="$1"
+  config_file_secure "$path" || die "configuration file must be owner-private or group-readable without group/other write access: $path"
+}
+
 apply_config_defaults() {
   : "${BACKEND:=ssh-socks}"
   : "${SOCKS_BIND:=127.0.0.1}"
@@ -33,6 +52,7 @@ apply_config_defaults() {
 
 load_config() {
   [[ -r "$PA_CONFIG" ]] || die "config not found: $PA_CONFIG"
+  require_secure_config_file "$PA_CONFIG"
   # shellcheck disable=SC1090
   source "$PA_CONFIG"
   apply_config_defaults
