@@ -50,7 +50,12 @@ for _ in {1..100}; do [[ -S "$SOCKET" ]] && break; sleep 0.05; done
 
 curl_unix() { curl --silent --show-error --fail --unix-socket "$SOCKET" "http://localhost$1"; }
 post_json() { curl --silent --show-error --fail --unix-socket "$SOCKET" -H 'Content-Type: application/json' -X POST --data "$2" "http://localhost$1"; }
-post_status() { curl --silent --show-error --unix-socket "$SOCKET" -o "$2" -w '%{http_code}' -H 'Content-Type: application/json' -X POST --data "$3" "http://localhost$1"; }
+post_status() { curl --silent --show-error --fail --unix-socket "$SOCKET" -o "$2" -w '%{http_code}' -H 'Content-Type: application/json' -X POST --data "$3" "http://localhost$1"; }
+
+# The API must not manufacture a revision merely by starting or serving health/status requests.
+[[ ! -e "$TMP/state/revisions/desired_revision" ]]
+[[ ! -e "$TMP/state/runtime/reconcile-state.json" ]]
+PA_STATE_DIR="$TMP/state" bash -c 'source "$1"; [[ "$(revision_current)" == 0 && "$(revision_desired_revision)" == 0 ]]' _ "$ROOT/lib/revision-store.sh"
 
 curl_unix /api/v1/health >"$TMP/health.json"
 curl_unix /api/v1/status >"$TMP/status.json"
