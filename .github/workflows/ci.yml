@@ -24,6 +24,18 @@ jobs:
         run: |
           find bin lib backends adapters integrations tests -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
           bash -n install.sh
+      - name: systemd unit contract smoke
+        run: |
+          for unit in systemd/*.service systemd/*.timer; do
+            grep -Eq '^\[(Unit|Service|Timer|Install)\]$' "$unit"
+          done
+          grep -q '^Type=simple$' systemd/proxy-agent.service
+          grep -q '^Environment=PA_FOREGROUND=true$' systemd/proxy-agent.service
+          grep -q '^Type=simple$' systemd/proxy-agent@.service
+          grep -q '^Environment=PA_FOREGROUND=true$' systemd/proxy-agent@.service
+          grep -q '^Requires=proxy-agent@%i.service$' systemd/proxy-agent-health@.service
+          grep -q '^ExecStart=.*proxy-agent-health --profile %i$' systemd/proxy-agent-health@.service
+          grep -q '^Unit=proxy-agent-health@%i.service$' systemd/proxy-agent-health@.timer
       - name: Functional smoke suite
         run: bash tests/smoke.sh
       - name: TUI guard smoke
@@ -40,4 +52,5 @@ jobs:
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl capabilities
           PA_PROFILE_DIR=/tmp/proxy-agent/profiles bash bin/proxy-agent-profile list
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl env
+          PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl status --json
           ! PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl doctor
