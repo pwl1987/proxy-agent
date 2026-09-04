@@ -33,4 +33,22 @@ r2="$(revision_record "$config" "test" "second" "passed" "ready")"
 [[ "$(revision_current)" == 2 ]]
 [[ "$(revision_list)" == $'0000000002.json\n0000000001.json' ]]
 
+# The compare-and-write primitive must reject a stale head without creating a revision.
+if revision_record_if_match 1 "$config" "test" "stale" "passed" "ready" >/dev/null 2>&1; then
+  echo 'stale revision create unexpectedly succeeded' >&2
+  exit 1
+fi
+[[ "$(revision_current)" == 2 ]]
+
+revision_set_desired 1 "$config"
+[[ "$(revision_desired_revision)" == 1 ]]
+if revision_set_desired_if_match 1 1 "$config" >/dev/null 2>&1; then
+  echo 'stale desired-state update unexpectedly succeeded' >&2
+  exit 1
+fi
+[[ "$(revision_desired_revision)" == 1 ]]
+
+revision_set_desired_if_match 2 2 "$config"
+[[ "$(revision_desired_revision)" == 2 ]]
+
 echo 'revision store smoke: PASS'
