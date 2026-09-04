@@ -26,7 +26,8 @@ revision_lock_acquire() {
     fi
     sleep 0.05
   done
-  die "revision store is locked: $lock"
+  printf '%s\n' "revision store is locked: $lock" >&2
+  return 1
 }
 
 revision_lock_release() { rm -rf "$(revision_lock_dir)"; }
@@ -52,7 +53,7 @@ revision_current() { revision_init; cat "$(revision_head_file)"; }
 revision_record() {
   local config_json="$1" actor="${2:-local}" summary="${3:-configuration change}" validation="${4:-passed}" health="${5:-pending}"
   revision_init
-  revision_lock_acquire
+  revision_lock_acquire || return 1
   local id="$(revision_next_id)" timestamp file tmp previous
   previous="$(revision_current)"
   timestamp="$(date +%s)"
@@ -101,11 +102,19 @@ revision_list() {
 revision_set_desired() {
   local id="$1" config_json="$2" dir tmp
   revision_get "$id" >/dev/null || return 1
+  revision_lock_acquire || return 1
   dir="$(revision_dir)"
   tmp="$(revision_desired_file).tmp.$$"
-  printf '%s\n' "$config_json" >"$tmp"
+  if ! printf '%s\n' "$config_json" >"$tmp"; then
+    rm -f "$tmp"
+    revision_lock_release
+    return 1
+  fi
   mv -f "$tmp" "$(revision_desired_file)"
-  printf '%s\n' "$id" >"$(revision_desired_revision_file)"
+  tmp="$(revision_desired_revision_file).tmp.$$"
+  printf '%s\n' "$id" >"$tmp"
+  mv -f "$tmp" "$(revision_desired_revision_file)"
+  revision_lock_release
 }
 
 revision_desired() {
