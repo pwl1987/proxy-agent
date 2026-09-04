@@ -18,12 +18,14 @@ backend_load() {
   # shellcheck disable=SC1090
   source "$file"
   prefix="$(backend_function_prefix "$name")"
+  declare -F "${prefix}_validate" >/dev/null || die "backend '$name' missing validate contract"
   declare -F "${prefix}_start" >/dev/null || die "backend '$name' missing start contract"
   declare -F "${prefix}_stop" >/dev/null || die "backend '$name' missing stop contract"
   declare -F "${prefix}_status" >/dev/null || die "backend '$name' missing status contract"
   declare -F "${prefix}_endpoint" >/dev/null || die "backend '$name' missing endpoint contract"
 }
 
+backend_validate() { "$(backend_function_prefix "$BACKEND")_validate"; }
 backend_start() { "$(backend_function_prefix "$BACKEND")_start"; }
 backend_stop() { "$(backend_function_prefix "$BACKEND")_stop"; }
 backend_status() { "$(backend_function_prefix "$BACKEND")_status"; }
