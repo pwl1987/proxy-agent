@@ -1,0 +1,203 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/pwl1987/proxy-agent/schema/proxy-agent-config.schema.json",
+  "title": "proxy-agent configuration",
+  "description": "Canonical typed configuration model for the proxy-agent control plane. Existing shell configuration remains a compatibility format during V3 migration.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "backend",
+    "listeners",
+    "health",
+    "integrations",
+    "routing",
+    "security"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Typed configuration schema version. This is independent from proxy-agent release version."
+    },
+    "profile": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]+$",
+      "default": "default"
+    },
+    "backend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "options": {
+          "type": "object",
+          "description": "Backend-specific typed options. Backend contracts define the allowed keys."
+        }
+      }
+    },
+    "listeners": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["socks5"],
+      "properties": {
+        "socks5": {
+          "$ref": "#/$defs/listener"
+        },
+        "http": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled", "bind", "port"],
+              "properties": {
+                "enabled": {"const": false},
+                "bind": {"type": "string"},
+                "port": {"$ref": "#/$defs/port"}
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["enabled", "bind", "port"],
+              "properties": {
+                "enabled": {"const": true},
+                "bind": {"type": "string", "minLength": 1},
+                "port": {"$ref": "#/$defs/port"}
+              }
+            }
+          ],
+          "default": {
+            "enabled": false,
+            "bind": "127.0.0.1",
+            "port": 8118
+          }
+        }
+      }
+    },
+    "routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "direct_cidrs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/nonEmptyString"},
+          "uniqueItems": true,
+          "default": []
+        },
+        "direct_domains": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/hostnamePattern"},
+          "uniqueItems": true,
+          "default": []
+        },
+        "no_proxy_extra": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/nonEmptyString"},
+          "uniqueItems": true,
+          "default": []
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["match", "action"],
+            "properties": {
+              "match": {"$ref": "#/$defs/nonEmptyString"},
+              "action": {
+                "type": "string",
+                "enum": ["proxy", "direct"]
+              }
+            }
+          },
+          "default": []
+        }
+      },
+      "default": {
+        "direct_cidrs": [],
+        "direct_domains": [],
+        "no_proxy_extra": [],
+        "rules": []
+      }
+    },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["network_required", "timeout", "retries", "backoff", "auto_recover"],
+      "properties": {
+        "network_required": {"type": "boolean"},
+        "timeout": {"type": "integer", "minimum": 1, "maximum": 3600},
+        "retries": {"type": "integer", "minimum": 0, "maximum": 100},
+        "backoff": {"type": "integer", "minimum": 0, "maximum": 3600},
+        "auto_recover": {"type": "boolean"},
+        "targets": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/httpUrl"},
+          "uniqueItems": true,
+          "default": []
+        }
+      }
+    },
+    "integrations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["git", "docker", "pip", "npm"],
+      "properties": {
+        "git": {"type": "boolean"},
+        "docker": {"type": "boolean"},
+        "pip": {"type": "boolean"},
+        "npm": {"type": "boolean"}
+      }
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ssh_host_key_checking", "allow_public_listener"],
+      "properties": {
+        "ssh_host_key_checking": {
+          "type": "string",
+          "enum": ["yes", "accept-new"]
+        },
+        "allow_public_listener": {
+          "type": "boolean",
+          "const": false,
+          "description": "V3 schema intentionally keeps public exposure disabled by default. Explicit deployment configuration is required for exposure."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "listener": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bind", "port"],
+      "properties": {
+        "bind": {"type": "string", "minLength": 1},
+        "port": {"$ref": "#/$defs/port"}
+      }
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "hostnamePattern": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9_*.?-]+$"
+    },
+    "httpUrl": {
+      "type": "string",
+      "pattern": "^https?://[^\\s]+$"
+    }
+  }
+}
