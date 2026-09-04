@@ -58,6 +58,14 @@ def revision_call(function: str, *args: str) -> bytes:
     return p.stdout
 
 
+def revision_call_rc(function: str, *args: str) -> tuple[int, bytes, bytes]:
+    env = os.environ.copy()
+    cmd = ["bash", "-c", 'source "$1"; shift; "$FUNC" "$@"', "_", str(REVISION_STORE), *args]
+    env["FUNC"] = function
+    p = subprocess.run(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    return p.returncode, p.stdout, p.stderr
+
+
 def audit_call(event: dict[str, Any]) -> None:
     text = json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     cmd = ["bash", "-c", 'source "$1"; audit_append "$2"', "_", str(AUDIT_STORE), text]
@@ -268,27 +276,39 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
     def _create_revision(self, body: Any) -> None:
         self._validate(body)
         expected = body.get("if_match_revision")
-        current = int(revision_call("revision_current"))
-        if expected is not None and int(expected) != current:
-            raise ConflictError(f"expected revision {expected}, current revision is {current}")
         cfg = json.dumps(body["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True)
         actor = str(body.get("actor") or "local-api")
         summary = str(body.get("change_summary") or "configuration change")
-        rid = int(revision_call("revision_record", cfg, actor, summary, "passed", "pending"))
+        if expected is None:
+            rid = int(revision_call("revision_record", cfg, actor, summary, "passed", "pending"))
+        else:
+            expected_text = str(expected)
+            rc, stdout, stderr = revision_call_rc("revision_record_if_match", expected_text, cfg, actor, summary, "passed", "pending")
+            if rc == 3:
+                raise ConflictError(stderr_message(stderr) or f"expected revision {expected_text} does not match current revision")
+            if rc != 0:
+                raise RuntimeError(stderr_message(stderr) or "revision creation failed")
+            rid = int(stdout)
         safe_audit({"schema_version": 1, "event": "revision.created", "revision": rid, "actor": actor, "timestamp": int(time.time()), "change_summary": summary})
         self._send(HTTPStatus.CREATED, response_envelope("revision", json.loads(revision_call("revision_get", str(rid)))))
 
     def _apply(self, body: Any) -> None:
         revision = int(body.get("revision", 0)) if isinstance(body, dict) else 0
         expected = body.get("if_match_revision") if isinstance(body, dict) else None
-        current = int(revision_call("revision_current"))
         if revision <= 0:
             raise ValueError("revision is required")
-        if expected is not None and int(expected) != current:
-            raise ConflictError(f"expected revision {expected}, current revision is {current}")
         raw = revision_call("revision_get", str(revision))
         obj = json.loads(raw)
-        revision_call("revision_set_desired", str(revision), json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+        cfg = json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        if expected is None:
+            revision_call("revision_set_desired", str(revision), cfg)
+        else:
+            expected_text = str(expected)
+            rc, _, stderr = revision_call_rc("revision_set_desired_if_match", expected_text, str(revision), cfg)
+            if rc == 3:
+                raise ConflictError(stderr_message(stderr) or f"expected revision {expected_text} does not match current revision")
+            if rc != 0:
+                raise RuntimeError(stderr_message(stderr) or "desired-state update failed")
         actor = str(body.get("actor") or "local-api")
         try:
             result = reconcile("--activate")
@@ -320,51 +340,39 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
             safe_audit({"schema_version": 1, "event": "rollback.activation_failed", "revision": rid, "target_revision": target, "actor": actor, "timestamp": int(time.time()), "status": "failed", "error": message})
             raise ActivationError(message) from exc
         safe_audit({"schema_version": 1, "event": "rollback.activated", "revision": rid, "target_revision": target, "actor": actor, "timestamp": int(time.time()), "status": result.get("status")})
-        self._send(HTTPStatus.ACCEPTED, response_envelope("rollback", {"revision": rid, "target_revision": target, "desired_revision": int(revision_call("revision_desired_revision")), "reconcile": result}))
+        self._send(HTTPStatus.ACCEPTED, response_envelope("rollback", {"revision": rid, "target_revision": target, "reconcile": result}))
 
 
 class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     daemon_threads = True
-    allow_reuse_address = True
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="proxy-agent local Control API v1")
+    parser = argparse.ArgumentParser()
     parser.add_argument("--socket", default=os.environ.get("PA_API_SOCKET", "/run/proxy-agent/control.sock"))
     return parser.parse_args()
-
-
-def prepare_socket(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        mode = path.stat().st_mode
-    except FileNotFoundError:
-        mode = None
-    if mode is not None:
-        if not stat.S_ISSOCK(mode):
-            raise RuntimeError(f"refusing to replace non-socket path: {path}")
-        path.unlink()
 
 
 def main() -> int:
     args = parse_args()
     socket_path = Path(args.socket)
-    if not socket_path.is_absolute():
-        print("socket path must be absolute", file=sys.stderr)
-        return 2
-    prepare_socket(socket_path)
+    socket_path.parent.mkdir(parents=True, exist_ok=True)
+    if socket_path.exists():
+        if not stat.S_ISSOCK(socket_path.stat().st_mode):
+            print(f"refusing to replace non-socket path: {socket_path}", file=sys.stderr)
+            return 2
+        socket_path.unlink()
     server = UnixHTTPServer(str(socket_path), ControlRequestHandler)
     os.chmod(socket_path, 0o600)
+    print(f"control-api listening on {socket_path}", file=sys.stderr)
     try:
-        print(f"proxy-agent control API v1 listening on {socket_path}", file=sys.stderr)
         server.serve_forever()
     except KeyboardInterrupt:
-        return 0
+        pass
     finally:
         server.server_close()
         try:
-            if socket_path.exists() and stat.S_ISSOCK(socket_path.stat().st_mode):
-                socket_path.unlink()
+            socket_path.unlink()
         except FileNotFoundError:
             pass
     return 0
