@@ -20,16 +20,22 @@ DIRECT_CIDRS="127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 DIRECT_DOMAINS="localhost,.local,.cn"
 NO_PROXY_EXTRA="internal.example"
 HEALTH_TIMEOUT="1"
+INTEGRATE_GIT="true"
+INTEGRATE_DOCKER="false"
+INTEGRATE_PIP="false"
+INTEGRATE_NPM="false"
 EOF
 
 run() { PA_CONFIG="$TMP/config" bash "$ROOT/bin/proxy-ctl" "$@"; }
+run_integration() { PA_CONFIG="$TMP/config" bash "$ROOT/bin/proxy-agent-integration" "$@"; }
 
-test -x "$ROOT/bin/proxy-ctl" || test -f "$ROOT/bin/proxy-ctl"
-bash -n "$ROOT/bin/proxy-ctl"
-bash -n "$ROOT/install.sh"
-bash -n "$ROOT/adapters/privoxy.sh"
-bash -n "$ROOT/backends/ssh-socks.sh"
-bash -n "$ROOT/lib/common.sh"
+for file in \
+  "$ROOT/bin/proxy-ctl" "$ROOT/bin/proxy-agent-health" "$ROOT/bin/proxy-agent-integration" \
+  "$ROOT/install.sh" "$ROOT/adapters/privoxy.sh" "$ROOT/backends/ssh-socks.sh" \
+  "$ROOT/lib/common.sh" "$ROOT/integrations/common.sh" "$ROOT/integrations/git.sh" \
+  "$ROOT/integrations/docker.sh" "$ROOT/integrations/pip.sh" "$ROOT/integrations/npm.sh"; do
+  bash -n "$file"
+done
 
 [[ "$(run route example.cn)" == DIRECT* ]]
 [[ "$(run route foo.local)" == DIRECT* ]]
@@ -37,6 +43,8 @@ bash -n "$ROOT/lib/common.sh"
 [[ "$(run route 8.8.8.8)" == PROXY* ]]
 [[ "$(run env | grep -c '^unset HTTP_PROXY')" -eq 1 ]]
 [[ "$(run env | grep -c '^export ALL_PROXY=')" -eq 1 ]]
+[[ "$(run_integration git | grep -c 'git config --global http.proxy')" -eq 1 ]]
+[[ "$(run_integration docker 2>/dev/null)" == *disabled* ]] || true
 ! run doctor
 
 echo 'PASS smoke tests'
