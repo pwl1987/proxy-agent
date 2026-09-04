@@ -1,15 +1,7 @@
 #!/usr/bin/env python3
 """Local Control API v1 for the proxy-agent control plane."""
 from __future__ import annotations
-
-import argparse
-import json
-import os
-import socketserver
-import stat
-import subprocess
-import sys
-import time
+import argparse, json, os, socketserver, stat, subprocess, sys, time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
@@ -25,23 +17,18 @@ MAX_BODY = 1024 * 1024
 
 def json_bytes(payload: dict[str, Any]) -> bytes:
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
-
 def response_envelope(kind: str, payload: Any) -> dict[str, Any]:
     return {"api_version": API_VERSION, "kind": kind, "data": payload}
-
 def error_envelope(code: str, message: str) -> dict[str, Any]:
     return {"api_version": API_VERSION, "error": {"code": code, "message": message}}
-
 def run_proxy_ctl(*args: str) -> tuple[int, bytes, bytes]:
     p = subprocess.run([str(PROXY_CTL), *args], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     return p.returncode, p.stdout, p.stderr
-
 def command_json(*args: str) -> Any:
     rc, stdout, stderr = run_proxy_ctl(*args)
     if rc != 0:
         raise RuntimeError(stderr.decode("utf-8", errors="replace").strip() or "proxy-ctl failed")
     return json.loads(stdout.decode("utf-8"))
-
 def revision_call(function: str, *args: str) -> bytes:
     env = os.environ.copy()
     cmd = ["bash", "-c", 'source "$1"; shift; "$FUNC" "$@"', "_", str(REVISION_STORE), *args]
@@ -50,24 +37,20 @@ def revision_call(function: str, *args: str) -> bytes:
     if p.returncode != 0:
         raise RuntimeError(p.stderr.decode("utf-8", errors="replace").strip() or f"revision operation failed: {function}")
     return p.stdout
-
 def revision_call_rc(function: str, *args: str) -> tuple[int, bytes, bytes]:
     env = os.environ.copy()
     cmd = ["bash", "-c", 'source "$1"; shift; "$FUNC" "$@"', "_", str(REVISION_STORE), *args]
     env["FUNC"] = function
     p = subprocess.run(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     return p.returncode, p.stdout, p.stderr
-
 def audit_call(event: dict[str, Any]) -> None:
     text = json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     cmd = ["bash", "-c", 'source "$1"; audit_append "$2"', "_", str(AUDIT_STORE), text]
     p = subprocess.run(cmd, cwd=ROOT, env=os.environ.copy(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     if p.returncode != 0:
         raise RuntimeError(p.stderr.decode("utf-8", errors="replace").strip() or "audit append failed")
-
 def stderr_message(stderr: bytes) -> str:
     return stderr.decode("utf-8", errors="replace").strip()
-
 def reconcile(*args: str) -> dict[str, Any]:
     p = subprocess.run([str(RECONCILER), *args], cwd=ROOT, env=os.environ.copy(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     if p.returncode != 0:
@@ -76,7 +59,6 @@ def reconcile(*args: str) -> dict[str, Any]:
         return json.loads(p.stdout.decode("utf-8"))
     except json.JSONDecodeError as exc:
         raise RuntimeError(f"reconcile returned invalid JSON: {exc}") from exc
-
 def observed_state() -> dict[str, Any]:
     state_dir = Path(os.environ.get("PA_STATE_DIR", "/run/proxy-agent"))
     path = state_dir / "runtime" / "reconcile-state.json"
@@ -86,43 +68,27 @@ def observed_state() -> dict[str, Any]:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {"status": "unknown", "desired_revision": int(revision_call("revision_desired_revision")), "observed_revision": 0}
-
-class ConflictError(Exception):
-    pass
-class ValidationError(Exception):
-    pass
-class ActivationError(Exception):
-    pass
-
+class ConflictError(Exception): pass
+class ValidationError(Exception): pass
+class ActivationError(Exception): pass
 def safe_audit(event: dict[str, Any]) -> None:
-    try:
-        audit_call(event)
-    except Exception as exc:
-        print(f"control-api: audit append failed: {exc}", file=sys.stderr)
+    try: audit_call(event)
+    except Exception as exc: print(f"control-api: audit append failed: {exc}", file=sys.stderr)
 
 class ControlRequestHandler(BaseHTTPRequestHandler):
     server_version = "proxy-agent-control/1"
     protocol_version = "HTTP/1.1"
-    def log_message(self, fmt: str, *args: object) -> None:
-        print(f"control-api: {fmt % args}", file=sys.stderr)
+    def log_message(self, fmt: str, *args: object) -> None: print(f"control-api: {fmt % args}", file=sys.stderr)
     def _send(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
-        body = json_bytes(payload)
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
+        body = json_bytes(payload); self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8"); self.send_header("Content-Length", str(len(body))); self.send_header("Cache-Control", "no-store")
+        self.end_headers(); self.wfile.write(body)
     def _read_json_body(self) -> Any:
-        try:
-            length = int(self.headers.get("Content-Length", "0"))
-        except ValueError as exc:
-            raise ValueError("invalid Content-Length") from exc
-        if length < 0 or length > MAX_BODY:
-            raise ValueError("request body too large")
+        try: length = int(self.headers.get("Content-Length", "0"))
+        except ValueError as exc: raise ValueError("invalid Content-Length") from exc
+        if length < 0 or length > MAX_BODY: raise ValueError("request body too large")
         raw = self.rfile.read(length)
-        if length and len(raw) != length:
-            raise ValueError("short request body")
+        if length and len(raw) != length: raise ValueError("short request body")
         return json.loads(raw.decode("utf-8")) if raw else None
     def do_GET(self) -> None:
         routes = {"/api/v1/status": self._status, "/api/v1/health": self._health, "/api/v1/capabilities": self._capabilities, "/api/v1/config": self._config, "/api/v1/events": self._events, "/api/v1/metrics": self._metrics, "/api/v1/revisions": self._revisions}
@@ -161,14 +127,23 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         data["control"] = observed_state(); data["desired_revision"] = int(revision_call("revision_desired_revision")); data["current_revision"] = int(revision_call("revision_current"))
         self._send(HTTPStatus.OK, response_envelope("status", data))
     def _health(self) -> None:
-        self._send(HTTPStatus.OK, response_envelope("health", {"status": "ok", "transport": "ready"}))
+        runtime = command_json("status", "--json")
+        backend_ready = runtime.get("backend_status") == "listening"
+        http_enabled = runtime.get("http_enabled") is True
+        adapter_ready = (not http_enabled) or runtime.get("http_status") == "listening"
+        observed = observed_state()
+        desired_revision = int(revision_call("revision_desired_revision"))
+        observed_revision = int(observed.get("observed_revision", 0))
+        revision_ready = desired_revision == observed_revision
+        readiness = "ready" if backend_ready and adapter_ready and revision_ready else "not_ready"
+        status = "ok" if readiness == "ready" else "degraded"
+        self._send(HTTPStatus.OK, response_envelope("health", {"status": status, "transport": "ready", "readiness": readiness, "runtime": {"backend": runtime.get("backend_status", "unknown"), "adapter": runtime.get("http_status", "disabled") if http_enabled else "disabled"}, "desired_revision": desired_revision, "observed_revision": observed_revision}))
     def _capabilities(self) -> None:
         status = command_json("status", "--json"); rc, stdout, stderr = run_proxy_ctl("capabilities")
         if rc != 0: raise RuntimeError(stderr_message(stderr) or "capabilities failed")
         caps = [x for x in stdout.decode("utf-8", errors="replace").splitlines() if x]
         self._send(HTTPStatus.OK, response_envelope("capabilities", {"backend": status.get("backend", "unknown"), "capabilities": caps}))
-    def _config(self) -> None:
-        self._send(HTTPStatus.OK, response_envelope("config", command_json("config", "export-typed")))
+    def _config(self) -> None: self._send(HTTPStatus.OK, response_envelope("config", command_json("config", "export-typed")))
     def _events(self) -> None:
         raw = subprocess.run(["bash", "-c", 'source "$1"; audit_list', "_", str(AUDIT_STORE)], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False).stdout
         events = [json.loads(line) for line in raw.decode("utf-8").splitlines() if line]
@@ -231,10 +206,8 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
 
 class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     daemon_threads = True
-
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(); parser.add_argument("--socket", default=os.environ.get("PA_API_SOCKET", "/run/proxy-agent/control.sock")); return parser.parse_args()
-
 def main() -> int:
     args = parse_args(); socket_path = Path(args.socket); socket_path.parent.mkdir(parents=True, exist_ok=True)
     if socket_path.exists():
@@ -248,5 +221,4 @@ def main() -> int:
         try: socket_path.unlink()
         except FileNotFoundError: pass
     return 0
-
 if __name__ == "__main__": raise SystemExit(main())
