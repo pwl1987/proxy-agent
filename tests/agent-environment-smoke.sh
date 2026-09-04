@@ -44,7 +44,7 @@ printf '%s\n' "$installed"
 test -f "$PROFILE_DIR/coding.conf"
 test "$(stat -c '%a' "$PROFILE_DIR/coding.conf")" = 600
 
-PA_PROFILE_DIR="$PROFILE_DIR" PA_STATE_DIR="$STATE_DIR" \
+PA_CONFIG="$CONFIG" PA_PROFILE_DIR="$PROFILE_DIR" PA_STATE_DIR="$STATE_DIR" \
   "$ROOT/bin/proxy-ctl" agent env --profile coding --json >"$TMP/env.json"
 python3 - "$TMP/env.json" <<'PY'
 import json, sys
@@ -57,12 +57,12 @@ assert obj["all_proxy"] == ""
 assert obj["no_proxy"] == "127.0.0.0/8,localhost,internal.example"
 PY
 
-PA_PROFILE_DIR="$PROFILE_DIR" PA_STATE_DIR="$STATE_DIR" \
+PA_CONFIG="$CONFIG" PA_PROFILE_DIR="$PROFILE_DIR" PA_STATE_DIR="$STATE_DIR" \
   "$ROOT/bin/proxy-ctl" agent env --profile coding --shell bash >"$TMP/env.sh"
 grep -q 'export HTTP_PROXY=' "$TMP/env.sh"
 grep -q 'export NO_PROXY=' "$TMP/env.sh"
 
-PA_PROFILE_DIR="$PROFILE_DIR" PA_STATE_DIR="$STATE_DIR" \
+PA_CONFIG="$CONFIG" PA_PROFILE_DIR="$PROFILE_DIR" PA_STATE_DIR="$STATE_DIR" \
   "$ROOT/bin/proxy-ctl" agent status --profile coding --json >"$TMP/status.json"
 python3 - "$TMP/status.json" <<'PY'
 import json, sys
