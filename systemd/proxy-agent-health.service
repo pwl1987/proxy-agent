@@ -1,0 +1,8 @@
+[Unit]
+Description=proxy-agent health check and recovery
+After=proxy-agent.service
+Requires=proxy-agent.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /opt/proxy-agent/bin/proxy-agent-health
