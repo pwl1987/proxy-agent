@@ -28,7 +28,6 @@ COPY proxy-agent.conf.example /etc/proxy-agent/proxy-agent.conf.example
 COPY VERSION /opt/proxy-agent/VERSION
 
 RUN chmod 0755 /opt/proxy-agent/bin/* /opt/proxy-agent/lib/*.sh /opt/proxy-agent/backends/*.sh /opt/proxy-agent/adapters/*.sh /opt/proxy-agent/integrations/*.sh \
-    && install -m 0640 -o root -g "$SERVICE_GROUP" /etc/proxy-agent/proxy-agent.conf.example /etc/proxy-agent/proxy-agent.conf \
     && chown -R root:root /opt/proxy-agent
 
 ENV PA_CONFIG=/etc/proxy-agent/proxy-agent.conf \
