@@ -1,0 +1,213 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+if command -v readlink >/dev/null 2>&1; then
+  SCRIPT_PATH="$(readlink -f -- "$SCRIPT_PATH")"
+fi
+ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
+source "$ROOT/lib/common.sh"
+source "$ROOT/lib/profile.sh"
+source "$ROOT/lib/backend-capabilities.sh"
+source "$ROOT/lib/backend.sh"
+source "$ROOT/lib/config.sh"
+
+PROFILE_NAME="agent"
+
+json_quote() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\n'/\\n}"
+  value="${value//$'\r'/\\r}"
+  value="${value//$'\t'/\\t}"
+  printf '"%s"' "$value"
+}
+
+usage() {
+  cat <<'EOF'
+用法：proxy-agent-agent <install|status|env> [选项]
+
+  install [--profile NAME] [--from-config PATH]
+      从现有、已验证配置初始化 Agent 专用 Profile。
+  status [--profile NAME] [--json]
+      查看 Agent Network Environment 状态。
+  env [--profile NAME] [--json] [--shell bash]
+      输出 Agent 所需 HTTP/HTTPS/ALL/NO_PROXY 环境。
+
+安装器只负责初始化 Profile，不安装第三方 Agent、账号或密钥。
+Control Plane 继续负责配置、生命周期、健康与回收。
+EOF
+}
+
+parse_profile() {
+  if [[ "${1:-}" == "--profile" ]]; then
+    [[ -n "${2:-}" ]] || die '用法：--profile <名称>'
+    PROFILE_NAME="$2"
+    shift 2
+  fi
+  printf '%s' "$PROFILE_NAME"
+}
+
+load_profile() {
+  local name="$1"
+  profile_exists "$name" || die "agent profile not found: $name"
+  profile_load "$name"
+  apply_config_defaults
+  backend_load
+}
+
+cmd_install() {
+  local name='agent' source_config=''
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --profile)
+        [[ -n "${2:-}" ]] || die '用法：agent install --profile <名称>'
+        name="$2"
+        shift 2
+        ;;
+      --from-config)
+        [[ -n "${2:-}" ]] || die '用法：agent install --from-config <路径>'
+        source_config="$2"
+        shift 2
+        ;;
+      *)
+        die "未知选项：$1"
+        ;;
+    esac
+  done
+
+  if [[ -z "$source_config" ]]; then
+    source_config="${PA_CONFIG:-}"
+  fi
+  [[ -n "$source_config" && -r "$source_config" ]] || die '必须提供一个现有配置：--from-config <路径>'
+  require_secure_config_file "$source_config"
+  PA_CONFIG="$source_config" "$ROOT/bin/proxy-ctl" validate >/dev/null
+
+  local target
+  target="$(PA_PROFILE_DIR="${PA_PROFILE_DIR:-}" profile_path "$name")"
+  mkdir -p "$(dirname "$target")"
+  install -m 0600 "$source_config" "$target"
+  printf '{"schema_version":1,"profile":%s,"config":%s,"status":"installed"}\n' \
+    "$(json_quote "$name")" "$(json_quote "$target")"
+}
+
+cmd_env() {
+  local name="$PROFILE_NAME" json=false shell='bash'
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --profile)
+        [[ -n "${2:-}" ]] || die '用法：agent env --profile <名称>'
+        name="$2"
+        shift 2
+        ;;
+      --json) json=true; shift ;;
+      --shell)
+        [[ -n "${2:-}" ]] || die '用法：agent env --shell <bash>'
+        shell="$2"
+        shift 2
+        ;;
+      *) die "未知选项：$1" ;;
+    esac
+  done
+  [[ "$shell" == bash ]] || die '当前仅支持 --shell bash'
+  load_profile "$name"
+
+  local no_proxy="${DIRECT_CIDRS:-}"
+  [[ -z "${DIRECT_DOMAINS:-}" ]] || no_proxy="${no_proxy:+${no_proxy},}${DIRECT_DOMAINS}"
+  [[ -z "${NO_PROXY_EXTRA:-}" ]] || no_proxy="${no_proxy:+${no_proxy},}${NO_PROXY_EXTRA}"
+  local endpoint http_proxy_value='' https_proxy_value='' all_proxy_value=''
+  endpoint="$(backend_endpoint)"
+  if [[ "${HTTP_ENABLED:-false}" == true ]]; then
+    http_proxy_value="http://${HTTP_BIND}:${HTTP_PORT}"
+    https_proxy_value="$http_proxy_value"
+  elif backend_capability http_native >/dev/null 2>&1; then
+    http_proxy_value="$endpoint"
+    https_proxy_value="$endpoint"
+  fi
+  if backend_capability socks5 >/dev/null 2>&1; then
+    all_proxy_value="$endpoint"
+  fi
+
+  if [[ "$json" == true ]]; then
+    printf '{"schema_version":1,"profile":%s,"http_proxy":%s,"https_proxy":%s,"all_proxy":%s,"no_proxy":%s}\n' \
+      "$(json_quote "$name")" "$(json_quote "$http_proxy_value")" "$(json_quote "$https_proxy_value")" \
+      "$(json_quote "$all_proxy_value")" "$(json_quote "$no_proxy")"
+    return 0
+  fi
+
+  if [[ -n "$http_proxy_value" ]]; then
+    printf 'export HTTP_PROXY=%q HTTPS_PROXY=%q http_proxy=%q https_proxy=%q\n' \
+      "$http_proxy_value" "$https_proxy_value" "$http_proxy_value" "$https_proxy_value"
+  else
+    printf 'unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy\n'
+  fi
+  if [[ -n "$all_proxy_value" ]]; then
+    printf 'export ALL_PROXY=%q all_proxy=%q\n' "$all_proxy_value" "$all_proxy_value"
+  else
+    printf 'unset ALL_PROXY all_proxy\n'
+  fi
+  printf 'export NO_PROXY=%q no_proxy=%q\n' "$no_proxy" "$no_proxy"
+}
+
+cmd_status() {
+  local name="$PROFILE_NAME" json=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --profile)
+        [[ -n "${2:-}" ]] || die '用法：agent status --profile <名称>'
+        name="$2"
+        shift 2
+        ;;
+      --json) json=true; shift ;;
+      *) die "未知选项：$1" ;;
+    esac
+  done
+  load_profile "$name"
+  local proxy_status
+  if ! proxy_status="$(PA_CONFIG="$PA_CONFIG" "$ROOT/bin/proxy-ctl" --profile "$name" status --json=v2 2>/dev/null)"; then
+    proxy_status='{}'
+  fi
+  if [[ "$json" == true ]]; then
+    python3 - "$name" "$proxy_status" <<'PY'
+import json, sys
+name = sys.argv[1]
+try:
+    runtime = json.loads(sys.argv[2])
+except json.JSONDecodeError:
+    runtime = {}
+print(json.dumps({
+    "schema_version": 1,
+    "profile": name,
+    "status": "ready" if runtime.get("backend", {}).get("status") == "ready" else "degraded",
+    "backend": runtime.get("backend", {}),
+    "adapter": runtime.get("adapter", {}),
+    "health": runtime.get("health", {}),
+    "integrations": {
+        "git": bool(globals().get("INTEGRATE_GIT", False)),
+        "docker": bool(globals().get("INTEGRATE_DOCKER", False)),
+        "pip": bool(globals().get("INTEGRATE_PIP", False)),
+        "npm": bool(globals().get("INTEGRATE_NPM", False)),
+    },
+}, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+PY
+    return 0
+  fi
+  printf 'Agent Network Environment\n  Profile: %s\n  Backend: %s\n  Endpoint: %s\n' "$name" "$BACKEND" "$(backend_endpoint)"
+  if backend_status >/dev/null 2>&1; then
+    echo '  Runtime: ready'
+  else
+    echo '  Runtime: not-ready'
+  fi
+  printf '  Git: %s\n' "${INTEGRATE_GIT:-false}"
+  printf '  Docker: %s\n' "${INTEGRATE_DOCKER:-false}"
+  printf '  pip: %s\n' "${INTEGRATE_PIP:-false}"
+  printf '  npm: %s\n' "${INTEGRATE_NPM:-false}"
+}
+
+case "${1:-}" in
+  install) shift; cmd_install "$@" ;;
+  status) shift; cmd_status "$@" ;;
+  env) shift; cmd_env "$@" ;;
+  *) usage; exit 2 ;;
+esac
