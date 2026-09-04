@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../lib/common.sh
+source "$ROOT/lib/common.sh"
+# shellcheck source=../backends/ssh-socks.sh
+source "$ROOT/backends/ssh-socks.sh"
+
+load_config
+
+backend_start() {
+  case "$BACKEND" in
+    ssh-socks) backend_ssh_socks_start ;;
+    *) die "unsupported backend: $BACKEND" ;;
+  esac
+}
+backend_stop() {
+  case "$BACKEND" in
+    ssh-socks) backend_ssh_socks_stop ;;
+    *) die "unsupported backend: $BACKEND" ;;
+  esac
+}
+
+cmd_start() {
+  backend_start
+  if [[ "$HTTP_ENABLED" == "true" ]]; then
+    require_cmd privoxy
+    log "HTTP proxy requested on ${HTTP_BIND}:${HTTP_PORT}; configure Privoxy separately or use the installer integration"
+  fi
+  log "backend started: $BACKEND"
+}
+
+cmd_stop() { backend_stop; log "backend stopped"; }
+cmd_restart() { cmd_stop; sleep 1; cmd_start; }
+
+cmd_status() {
+  printf 'proxy-agent\n  backend: %s\n' "$BACKEND"
+  if backend_ssh_socks_status 2>/dev/null; then
+    echo '  SOCKS:  listening'
+  else
+    echo '  SOCKS:  not listening'
+  fi
+  [[ "$HTTP_ENABLED" == "true" ]] && {
+    if port_listening "$HTTP_PORT"; then echo '  HTTP:   listening'; else echo '  HTTP:   not listening'; fi
+  }
+  printf '  remote: %s@%s:%s\n' "$REMOTE_USER" "$REMOTE_HOST" "${REMOTE_PORT:-22}"
+}
+
+curl_via() {
+  local url="$1"
+  curl -fsS --connect-timeout "$HEALTH_TIMEOUT" --max-time "$((HEALTH_TIMEOUT + 5))" \
+    --proxy "http://${HTTP_BIND}:${HTTP_PORT}" "$url" >/dev/null
+}
+
+cmd_test() {
+  require_cmd curl
+  echo '== proxy-agent connectivity test =='
+  local failed=0 target
+  IFS=',' read -r -a targets <<< "${HEALTH_TARGETS:-}"
+  for target in "${targets[@]}"; do
+    [[ -n "$target" ]] || continue
+    if curl_via "$target"; then printf 'PASS  %s\n' "$target"; else printf 'FAIL  %s\n' "$target"; failed=1; fi
+  done
+  return "$failed"
+}
+
+cmd_diagnose() {
+  echo '== proxy-agent diagnosis =='
+  for c in ssh autossh curl ss; do
+    if command -v "$c" >/dev/null 2>&1; then printf 'OK    %s\n' "$c"; else printf 'MISS  %s\n' "$c"; fi
+  done
+  echo "config: $PA_CONFIG"
+  echo "backend: $BACKEND"
+  echo "SOCKS: ${SOCKS_BIND}:${SOCKS_PORT}"
+  echo "HTTP:  ${HTTP_ENABLED} ${HTTP_BIND}:${HTTP_PORT}"
+  if [[ "$REMOTE_HOST" == *.* ]]; then
+    getent hosts "$REMOTE_HOST" || warn "cannot resolve $REMOTE_HOST"
+  fi
+  if ! port_listening "$SOCKS_PORT"; then warn "SOCKS listener is down"; fi
+}
+
+cmd_route() {
+  local host="${1:-}"
+  [[ -n "$host" ]] || die 'usage: proxy-ctl route <host>'
+  local d="$DIRECT_DOMAINS" item
+  IFS=',' read -r -a items <<< "$d"
+  for item in "${items[@]}"; do
+    item="${item#.}"
+    if [[ "$host" == "$item" || "$host" == *".$item" ]]; then
+      echo "DIRECT  $host  (domain policy: $item)"; return 0
+    fi
+  done
+  echo "PROXY   $host  (default route)"
+}
+
+cmd_env() {
+  if [[ "${1:-}" == '--off' ]]; then
+    printf 'unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy NO_PROXY no_proxy\n'
+    return
+  fi
+  local http="http://${HTTP_BIND}:${HTTP_PORT}" socks="socks5://${SOCKS_BIND}:${SOCKS_PORT}"
+  printf 'export HTTP_PROXY=%q HTTPS_PROXY=%q ALL_PROXY=%q http_proxy=%q https_proxy=%q all_proxy=%q\n' "$http" "$http" "$socks" "$http" "$http" "$socks"
+  printf 'export NO_PROXY=%q no_proxy=%q\n' "${DIRECT_CIDRS//,/,},${DIRECT_DOMAINS}" "${DIRECT_CIDRS//,/,},${DIRECT_DOMAINS}"
+}
+
+cmd_doctor() {
+  local rc=0
+  [[ "$SOCKS_BIND" != '0.0.0.0' ]] || { warn 'SOCKS is exposed on all interfaces'; rc=1; }
+  [[ "${SSH_STRICT_HOST_KEY_CHECKING:-yes}" == 'yes' ]] || { warn 'SSH host-key verification is disabled'; rc=1; }
+  [[ -n "${REMOTE_HOST:-}" ]] || { warn 'REMOTE_HOST is empty'; rc=1; }
+  return "$rc"
+}
+
+usage() {
+  cat <<'EOF'
+Usage: proxy-ctl <command>
+  start             start configured backend
+  stop              stop configured backend
+  restart           restart configured backend
+  status            show runtime state
+  test              test configured HTTP proxy targets
+  diagnose          inspect dependencies/config/runtime
+  doctor            check unsafe configuration
+  route <host>      explain domain routing decision
+  env [--off]       print shell commands for proxy environment
+EOF
+}
+
+case "${1:-}" in
+  start) cmd_start ;;
+  stop) cmd_stop ;;
+  restart) cmd_restart ;;
+  status) cmd_status ;;
+  test) cmd_test ;;
+  diagnose) cmd_diagnose ;;
+  doctor) cmd_doctor ;;
+  route) shift; cmd_route "${1:-}" ;;
+  env) shift; cmd_env "${1:-}" ;;
+  *) usage; exit 2 ;;
+esac
