@@ -19,12 +19,13 @@ SOCKS_BIND="127.0.0.1"
 SOCKS_PORT="1080"
 
 # Optional HTTP adapter. Disabled by default because it adds an extra daemon.
-# When enabled, proxy-agent will generate/manage a private Privoxy instance
-# forwarding through a backend with the socks5 capability.
+# When enabled, proxy-agent generates its Privoxy runtime configuration under
+# the profile state directory. Set PRIVOXY_CONFIG only when a custom writable
+# runtime path is intentionally required.
 HTTP_ENABLED="false"
 HTTP_BIND="127.0.0.1"
 HTTP_PORT="8118"
-PRIVOXY_CONFIG="/etc/proxy-agent/privoxy.conf"
+# PRIVOXY_CONFIG="/run/proxy-agent/privoxy.conf"
 
 # SSH keepalive (ssh-socks backend)
 AUTOSSH_MONITOR_PORT="0"
