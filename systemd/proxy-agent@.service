@@ -5,14 +5,13 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl --profile %i start
+ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl --profile %i run
 ExecStop=/bin/bash @PREFIX@/bin/proxy-ctl --profile %i stop
 ExecReload=/bin/bash @PREFIX@/bin/proxy-ctl --profile %i restart
 Restart=on-failure
 RestartSec=3
 KillMode=control-group
 TimeoutStopSec=10
-Environment=PA_FOREGROUND=true
 
 [Install]
 WantedBy=multi-user.target

@@ -16,9 +16,18 @@ fi
 if [[ -n "$PROFILE_NAME" ]]; then
   profile_load "$PROFILE_NAME"
   PA_STATE_DIR="${PA_STATE_DIR:-/run/proxy-agent}/${PROFILE_NAME}"
+  apply_config_defaults
 else
   load_config
 fi
+
+sync_runtime_state() {
+  if [[ -n "$PROFILE_NAME" ]]; then
+    "$ROOT/bin/proxy-ctl" --profile "$PROFILE_NAME" status --json=v2 >/dev/null 2>&1 || true
+  else
+    "$ROOT/bin/proxy-ctl" status --json=v2 >/dev/null 2>&1 || true
+  fi
+}
 
 attempt_test() {
   if [[ -n "$PROFILE_NAME" ]]; then
@@ -36,6 +45,7 @@ while (( attempt <= retries + 1 )); do
   if attempt_test; then
     mkdir -p "$PA_STATE_DIR"
     date +%s >"$PA_STATE_DIR/healthy"
+    sync_runtime_state
     exit 0
   fi
   if (( attempt <= retries )); then
@@ -46,6 +56,7 @@ done
 
 mkdir -p "$PA_STATE_DIR"
 date +%s >"$PA_STATE_DIR/unhealthy"
+sync_runtime_state
 warn "proxy health check failed after $((retries + 1)) attempt(s)"
 
 if [[ "${HEALTH_AUTO_RECOVER:-true}" == "true" ]]; then
@@ -57,9 +68,11 @@ if [[ "${HEALTH_AUTO_RECOVER:-true}" == "true" ]]; then
   fi
   if attempt_test; then
     date +%s >"$PA_STATE_DIR/recovered"
+    sync_runtime_state
     log 'automatic recovery succeeded'
     exit 0
   fi
+  sync_runtime_state
   warn 'automatic recovery failed'
 fi
 
