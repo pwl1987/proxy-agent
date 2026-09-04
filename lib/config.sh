@@ -27,34 +27,29 @@ config_is_bind() {
   local name="$1" value="$2"
   [[ -n "$value" ]] || { config_error "$name must not be empty"; return; }
   [[ "$value" != *[[:space:]]* ]] || { config_error "$name must not contain whitespace"; return; }
-  [[ "$value" =~ ^[A-Za-z0-9_.:-]+$ || "$value" =~ ^\[[0-9A-Fa-f:]+\]$ || "$value" =~ ^\[[0-9A-Fa-f:]+\]:[0-9]+$ ]] || \
+  [[ "$value" =~ ^[A-Za-z0-9_.:-]+$ || "$value" =~ ^\[[0-9A-Fa-f:]+\]$ ]] || \
     config_error "$name contains unsupported address syntax: $value"
 }
 
 config_validate_proxy_url() {
-  local name="$1" value="$2" scheme hostport host port
+  local name="$1" value="$2" hostport host port
   [[ -n "$value" ]] || { config_error "$name must not be empty"; return; }
   [[ "$value" =~ ^(socks5|socks5h|http|https)://([^/]+)(/)?$ ]] || {
     config_error "$name must use scheme://host[:port] with socks5, socks5h, http, or https"
     return
   }
-  scheme="${BASH_REMATCH[1]}"
   hostport="${BASH_REMATCH[2]}"
   if [[ "$hostport" =~ ^\[[0-9A-Fa-f:]+\](:([0-9]+))?$ ]]; then
-    port="${BASH_REMATCH[2]:-}" || true
+    port="${BASH_REMATCH[2]:-}"
   elif [[ "$hostport" =~ ^([^:]+)(:([0-9]+))?$ ]]; then
     host="${BASH_REMATCH[1]}"
-    port="${BASH_REMATCH[3]:-}" || true
+    port="${BASH_REMATCH[3]:-}"
     [[ -n "$host" && "$host" != *[[:space:]]* ]] || config_error "$name has an invalid host"
   else
     config_error "$name has an invalid host/port: $hostport"
     return
   fi
   [[ -z "$port" ]] || config_is_uint_range "$name port" "$port" 1 65535
-  case "$scheme" in
-    socks5|socks5h|http|https) ;;
-    *) config_error "$name uses unsupported scheme: $scheme" ;;
-  esac
 }
 
 config_validate_list() {
@@ -67,24 +62,6 @@ config_validate_list() {
   done
 }
 
-config_validate_route_rules() {
-  local line priority action matcher pattern extra line_no=0
-  [[ -z "${ROUTE_RULES:-}" ]] && return 0
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    line_no=$((line_no + 1))
-    [[ -z "$line" ]] && continue
-    IFS='|' read -r priority action matcher pattern extra <<< "$line"
-    [[ -z "${extra:-}" && -n "${pattern:-}" ]] || { config_error "ROUTE_RULES line $line_no must be priority|action|matcher|pattern"; continue; }
-    [[ "$priority" =~ ^[0-9]+$ ]] || config_error "ROUTE_RULES line $line_no has invalid priority"
-    [[ "$action" == DIRECT || "$action" == PROXY ]] || config_error "ROUTE_RULES line $line_no has invalid action: $action"
-    case "$matcher" in
-      exact|suffix|wildcard) [[ "$pattern" != *[[:space:]]* ]] || config_error "ROUTE_RULES line $line_no pattern contains whitespace" ;;
-      cidr) cidr_contains "0.0.0.0" "$pattern" >/dev/null 2>&1 || config_error "ROUTE_RULES line $line_no has invalid CIDR: $pattern" ;;
-      *) config_error "ROUTE_RULES line $line_no has invalid matcher: $matcher" ;;
-    esac
-  done <<< "$ROUTE_RULES"
-}
-
 config_validate_domains() {
   local name="$1" value="$2" item
   [[ -z "$value" ]] && return 0
@@ -92,7 +69,16 @@ config_validate_domains() {
   for item in "${items[@]}"; do
     [[ -n "$item" ]] || { config_error "$name contains an empty entry"; continue; }
     item="${item#.}"
-    [[ "$item" =~ ^[A-Za-z0-9_*.-]+$ ]] || config_error "$name contains invalid hostname pattern: $item"
+    [[ "$item" =~ ^[A-Za-z0-9_*.?-]+$ ]] || config_error "$name contains invalid hostname pattern: $item"
+  done
+}
+
+config_validate_targets() {
+  local name="$1" value="$2" target
+  [[ -z "$value" ]] && return 0
+  IFS=',' read -r -a targets <<< "$value"
+  for target in "${targets[@]}"; do
+    [[ "$target" =~ ^https?://[^[:space:]]+$ ]] || config_error "$name contains invalid target: $target"
   done
 }
 
@@ -121,8 +107,9 @@ config_validate_core() {
   if [[ "${HTTP_ENABLED:-false}" == true ]]; then
     [[ -n "${PRIVOXY_CONFIG:-}" ]] || config_error 'PRIVOXY_CONFIG is required when HTTP_ENABLED=true'
   fi
-  config_validate_list DIRECT_CIDRS "${DIRECT_CIDRS:-}"
+
   local cidr
+  config_validate_list DIRECT_CIDRS "${DIRECT_CIDRS:-}"
   if [[ -n "${DIRECT_CIDRS:-}" ]]; then
     IFS=',' read -r -a cidrs <<< "$DIRECT_CIDRS"
     for cidr in "${cidrs[@]}"; do
@@ -131,7 +118,8 @@ config_validate_core() {
   fi
   config_validate_domains DIRECT_DOMAINS "${DIRECT_DOMAINS:-}"
   config_validate_list NO_PROXY_EXTRA "${NO_PROXY_EXTRA:-}"
-  config_validate_route_rules
+  config_validate_targets HEALTH_TARGETS "${HEALTH_TARGETS:-}"
+  route_validate_rules || CONFIG_ERRORS=$((CONFIG_ERRORS + 1))
 }
 
 config_validate_backend_fields() {
@@ -153,14 +141,10 @@ config_validate_cross_fields() {
   if [[ "${HTTP_ENABLED:-false}" == true ]]; then
     backend_capability socks5 || config_error "backend '$BACKEND' cannot provide the Privoxy HTTP adapter (requires socks5 capability)"
   fi
-  if [[ "${INTEGRATE_DOCKER:-false}" == true ]]; then
-    [[ -n "${DOCKER_HOST:-}" ]] || true
-  fi
 }
 
 config_validate_backend_runtime() {
   local prefix="$(backend_function_prefix "$BACKEND")" output
-  declare -F "${prefix}_validate" >/dev/null 2>&1 || return 0
   if output="$(${prefix}_validate 2>&1)"; then
     [[ -z "$output" ]] || printf '%s\n' "$output"
   else
@@ -174,7 +158,6 @@ config_validate() {
   config_validate_core
   config_validate_backend_fields
   config_validate_cross_fields
-  config_validate_route_rules
   config_validate_backend_runtime
   if (( CONFIG_ERRORS == 0 )); then
     printf 'configuration valid: profile=%s backend=%s\n' "${PA_ACTIVE_PROFILE:-default}" "$BACKEND"
