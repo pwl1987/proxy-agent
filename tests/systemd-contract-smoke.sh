@@ -30,6 +30,11 @@ assert_contains systemd/proxy-agent.service 'ProtectSystem=strict'
 assert_contains systemd/proxy-agent.service 'ProtectHome=read-only'
 
 assert_contains systemd/proxy-agent@.service 'Type=simple'
+assert_contains systemd/proxy-agent@.service 'Environment=PA_PROFILE=%i'
+assert_contains systemd/proxy-agent@.service 'Environment=PA_STATE_DIR=/run/proxy-agent/%i'
+assert_contains systemd/proxy-agent@.service 'Environment=PA_CONFIG=/run/proxy-agent/%i/runtime/proxy-agent.conf'
+assert_contains systemd/proxy-agent@.service 'Environment=PA_BOOTSTRAP_CONFIG=/etc/proxy-agent/profiles/%i.conf'
+assert_contains systemd/proxy-agent@.service 'ExecStartPre=/bin/bash @PREFIX@/bin/proxy-agent-reconcile --bootstrap'
 assert_contains systemd/proxy-agent@.service 'ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl --profile %i run'
 assert_contains systemd/proxy-agent@.service 'User=@SERVICE_USER@'
 
