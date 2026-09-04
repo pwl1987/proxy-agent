@@ -57,22 +57,24 @@
 - Custom user install paths propagated into generated user units ✅
 - Symlink-safe installed entrypoints ✅
 
-## V2 backend compatibility — in progress
+## V2 backend compatibility — completed gate
 - Separate backend liveness from active network health probes ✅
-- Define adapter/backend compatibility matrix and tests 🟡
-- Current sing-box integration against the stable contract 🟡
-- Current mihomo integration against the stable contract
-- HTTP CONNECT upstream backend
+- Adapter/backend compatibility matrix and contract tests ✅
+- sing-box integration against the stable contract ✅
+- mihomo integration against the stable contract ✅
+- HTTP CONNECT upstream backend ✅
 
 ## V2 backends
 1. SSH SOCKS5 ✅
 2. Existing local SOCKS/HTTP endpoint ✅
-3. sing-box 🟡
-4. mihomo
-5. HTTP CONNECT upstream
+3. sing-box ✅
+4. mihomo ✅
+5. HTTP CONNECT upstream ✅
 
 Managed backends implement:
 `validate/start/stop/liveness/status/endpoint/managed/pid/process_identity/capabilities`.
+
+Unmanaged upstream backends implement the same semantic lifecycle surface but report `managed=false` and never terminate external processes.
 
 ## V2 deployment
 - Rootless Linux execution ✅
