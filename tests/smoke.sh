@@ -66,7 +66,7 @@ run_profile_inspect() { PA_PROFILE_DIR="$TMP/profiles" bash "$ROOT/bin/proxy-age
 
 for file in \
   "$ROOT/bin/proxy-ctl" "$ROOT/bin/proxy-agent-health" "$ROOT/bin/proxy-agent-integration" "$ROOT/bin/proxy-agent-profile" \
-  "$ROOT/bin/proxy-agent-tui" "$ROOT/install.sh" "$ROOT/install-user.sh" "$ROOT/adapters/privoxy.sh" "$ROOT/backends/ssh-socks.sh" "$ROOT/backends/local-endpoint.sh" \
+  "$ROOT/bin/proxy-agent-tui" "$ROOT/install.sh" "$ROOT/install-user.sh" "$ROOT/adapters/privoxy.sh" "$ROOT/backends/ssh-socks.sh" "$ROOT/backends/local-endpoint.sh" "$ROOT/backends/sing-box.sh" \
   "$ROOT/lib/common.sh" "$ROOT/lib/profile.sh" "$ROOT/lib/backend-capabilities.sh" "$ROOT/lib/backend.sh" "$ROOT/lib/route.sh" "$ROOT/lib/config.sh" "$ROOT/lib/state.sh" "$ROOT/lib/health.sh" \
   "$ROOT/integrations/common.sh" "$ROOT/integrations/git.sh" "$ROOT/integrations/docker.sh" "$ROOT/integrations/pip.sh" "$ROOT/integrations/npm.sh"; do
   bash -n "$file"
