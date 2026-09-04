@@ -8,7 +8,13 @@ import os
 import shutil
 import subprocess
 import sys
+from contextlib import contextmanager
 from pathlib import Path
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Linux reference runtime provides fcntl.
+    fcntl = None
 
 ROOT = Path(__file__).resolve().parent.parent
 REVISION_STORE = ROOT / "lib" / "revision-store.sh"
@@ -46,6 +52,21 @@ def atomic_write(path: Path, content: str, mode: int = 0o600) -> None:
     tmp.write_text(content, encoding="utf-8")
     os.chmod(tmp, mode)
     os.replace(tmp, path)
+
+
+@contextmanager
+def reconcile_lock(state_dir: Path):
+    state_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = state_dir / ".reconcile.lock"
+    with lock_path.open("a+", encoding="utf-8") as lock_file:
+        os.chmod(lock_path, 0o600)
+        if fcntl is not None:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if fcntl is not None:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def bootstrap_desired() -> int:
@@ -122,50 +143,51 @@ def main() -> int:
     if profile and os.environ.get("PA_STATE_DIR_EXPLICIT", "false") != "true":
         state_dir = state_dir / profile
 
-    if args.bootstrap:
-        bootstrap_desired()
+    with reconcile_lock(state_dir):
+        if args.bootstrap:
+            bootstrap_desired()
 
-    desired_revision = int(call_store("revision_desired_revision"))
-    if desired_revision == 0:
-        print(json.dumps({"schema_version": 1, "status": "idle", "desired_revision": 0, "observed_revision": 0}, separators=(",", ":")))
+        desired_revision = int(call_store("revision_desired_revision"))
+        if desired_revision == 0:
+            print(json.dumps({"schema_version": 1, "status": "idle", "desired_revision": 0, "observed_revision": 0}, separators=(",", ":")))
+            return 0
+
+        desired = json.loads(call_store("revision_desired"))
+        revision = json.loads(call_store("revision_get", str(desired_revision)))
+        if desired != revision["config"]:
+            raise RuntimeError(f"desired state mismatch for revision {desired_revision}")
+
+        exporter = subprocess.run(
+            [sys.executable, str(EXPORTER)],
+            input=json.dumps(desired, ensure_ascii=False, separators=(",", ":")),
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=ROOT,
+            check=False,
+        )
+        if exporter.returncode:
+            raise RuntimeError(exporter.stderr.strip() or "typed-to-runtime projection failed")
+
+        runtime_dir = state_dir / "runtime"
+        runtime_config = runtime_dir / "proxy-agent.conf"
+        observed_state = runtime_dir / "reconcile-state.json"
+        atomic_write(runtime_config, exporter.stdout)
+
+        if args.activate:
+            result = activate(runtime_config, desired_revision, observed_state)
+        else:
+            result = {
+                "schema_version": 1,
+                "status": "projected",
+                "desired_revision": desired_revision,
+                "observed_revision": desired_revision,
+                "runtime_config": str(runtime_config),
+            }
+            atomic_write(observed_state, json.dumps(result, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n")
+
+        print(json.dumps(result, separators=(",", ":"), sort_keys=True))
         return 0
-
-    desired = json.loads(call_store("revision_desired"))
-    revision = json.loads(call_store("revision_get", str(desired_revision)))
-    if desired != revision["config"]:
-        raise RuntimeError(f"desired state mismatch for revision {desired_revision}")
-
-    exporter = subprocess.run(
-        [sys.executable, str(EXPORTER)],
-        input=json.dumps(desired, ensure_ascii=False, separators=(",", ":")),
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        cwd=ROOT,
-        check=False,
-    )
-    if exporter.returncode:
-        raise RuntimeError(exporter.stderr.strip() or "typed-to-runtime projection failed")
-
-    runtime_dir = state_dir / "runtime"
-    runtime_config = runtime_dir / "proxy-agent.conf"
-    observed_state = runtime_dir / "reconcile-state.json"
-    atomic_write(runtime_config, exporter.stdout)
-
-    if args.activate:
-        result = activate(runtime_config, desired_revision, observed_state)
-    else:
-        result = {
-            "schema_version": 1,
-            "status": "projected",
-            "desired_revision": desired_revision,
-            "observed_revision": desired_revision,
-            "runtime_config": str(runtime_config),
-        }
-        atomic_write(observed_state, json.dumps(result, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n")
-
-    print(json.dumps(result, separators=(",", ":"), sort_keys=True))
-    return 0
 
 
 if __name__ == "__main__":
