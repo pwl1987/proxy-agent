@@ -39,6 +39,8 @@ jobs:
         run: bash tests/typed-config-cli-smoke.sh
       - name: Backend capability manifest smoke
         run: bash tests/backend-capability-manifest-smoke.sh
+      - name: Profile context smoke
+        run: bash tests/profile-context-smoke.sh
       - name: Control plane schema smoke
         run: bash tests/control-plane-schema-smoke.sh
       - name: Control API smoke
