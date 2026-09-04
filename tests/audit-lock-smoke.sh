@@ -14,7 +14,7 @@ audit_append "$event"
 
 # The lock must serialize independent concurrent appenders without losing or interleaving lines.
 for i in $(seq 1 20); do
-  bash -c 'source "$1/lib/audit-store.sh"; audit_append "{\"event\":\"concurrent\",\"id\":$2}"' _ "$ROOT" "$i" &
+  PA_STATE_DIR="$PA_STATE_DIR" bash -c 'source "$1/lib/audit-store.sh"; audit_append "{\"event\":\"concurrent\",\"id\":$2}"' _ "$ROOT" "$i" &
 done
 status=0
 for pid in $(jobs -pr); do
@@ -25,7 +25,7 @@ if (( status != 0 )); then
 fi
 python3 - "$(audit_file)" <<'PY'
 import json, sys
-with open(sys.argv[1], encoding="utf-8") as fh:
+with open(sys.argv[1], encoding='utf-8') as fh:
     rows = [json.loads(line) for line in fh if line.strip()]
 assert len(rows) == 21
 ids = sorted(row["id"] for row in rows[1:])
