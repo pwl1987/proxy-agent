@@ -165,8 +165,8 @@
         },
         "allow_public_listener": {
           "type": "boolean",
-          "const": false,
-          "description": "V3 schema intentionally keeps public exposure disabled by default. Explicit deployment configuration is required for exposure."
+          "default": false,
+          "description": "Public listener exposure is disabled by default. Enabling it is an explicit deployment decision and must be combined with the applicable authentication/network policy."
         }
       }
     }
