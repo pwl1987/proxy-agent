@@ -1,0 +1,12 @@
+[Unit]
+Description=periodic proxy-agent health check for profile %i
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+RandomizedDelaySec=20s
+Persistent=true
+Unit=proxy-agent-health@%i.service
+
+[Install]
+WantedBy=timers.target
