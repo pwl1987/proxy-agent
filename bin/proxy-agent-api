@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal local Control API v1 transport.
-
-0.3.x intentionally keeps the runtime implementation in the existing shell control
-plane. This process provides the stable local HTTP transport and delegates read-only
-queries to proxy-ctl. Mutating revision/apply/rollback endpoints remain explicitly
-unimplemented until the revision store is introduced.
-"""
-
+"""Local Control API v1 for the proxy-agent control plane."""
 from __future__ import annotations
 
 import argparse
@@ -24,6 +17,8 @@ from typing import Any
 API_VERSION = "v1"
 ROOT = Path(__file__).resolve().parent.parent
 PROXY_CTL = ROOT / "bin" / "proxy-ctl"
+REVISION_STORE = ROOT / "lib" / "revision-store.sh"
+AUDIT_STORE = ROOT / "lib" / "audit-store.sh"
 MAX_BODY = 1024 * 1024
 
 
@@ -40,25 +35,41 @@ def error_envelope(code: str, message: str) -> dict[str, Any]:
 
 
 def run_proxy_ctl(*args: str) -> tuple[int, bytes, bytes]:
-    process = subprocess.run(
-        [str(PROXY_CTL), *args],
-        cwd=ROOT,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    return process.returncode, process.stdout, process.stderr
+    p = subprocess.run([str(PROXY_CTL), *args], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    return p.returncode, p.stdout, p.stderr
 
 
 def command_json(*args: str) -> Any:
     rc, stdout, stderr = run_proxy_ctl(*args)
     if rc != 0:
-        detail = stderr.decode("utf-8", errors="replace").strip() or "proxy-ctl failed"
-        raise RuntimeError(detail)
-    try:
-        return json.loads(stdout.decode("utf-8"))
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(f"proxy-ctl returned invalid JSON: {exc}") from exc
+        raise RuntimeError(stderr.decode("utf-8", errors="replace").strip() or "proxy-ctl failed")
+    return json.loads(stdout.decode("utf-8"))
+
+
+def revision_shell(function: str, *args: str) -> tuple[int, bytes, bytes]:
+    env = os.environ.copy()
+    store = str(REVISION_STORE)
+    quoted = ["bash", "-c", f'source "$1"; {function} "$@"', "_", store, *args]
+    return subprocess.run(quoted, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False).returncode, b"", b""
+
+
+def revision_call(function: str, *args: str) -> bytes:
+    env = os.environ.copy()
+    cmd = ["bash", "-c", 'source "$1"; shift; "$FUNC" "$@"', "_", str(REVISION_STORE), *args]
+    env["FUNC"] = function
+    p = subprocess.run(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    if p.returncode != 0:
+        raise RuntimeError(p.stderr.decode("utf-8", errors="replace").strip() or f"revision operation failed: {function}")
+    return p.stdout
+
+
+def audit_call(event: dict[str, Any]) -> None:
+    env = os.environ.copy()
+    text = json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    cmd = ["bash", "-c", 'source "$1"; audit_append "$2"', "_", str(AUDIT_STORE), text]
+    p = subprocess.run(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    if p.returncode != 0:
+        raise RuntimeError(p.stderr.decode("utf-8", errors="replace").strip() or "audit append failed")
 
 
 class ControlRequestHandler(BaseHTTPRequestHandler):
@@ -78,9 +89,8 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _read_json_body(self) -> Any:
-        raw_length = self.headers.get("Content-Length", "0")
         try:
-            length = int(raw_length)
+            length = int(self.headers.get("Content-Length", "0"))
         except ValueError as exc:
             raise ValueError("invalid Content-Length") from exc
         if length < 0 or length > MAX_BODY:
@@ -98,6 +108,7 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
             "/api/v1/config": self._config,
             "/api/v1/events": self._events,
             "/api/v1/metrics": self._metrics,
+            "/api/v1/revisions": self._revisions,
         }
         handler = routes.get(self.path)
         if handler is None:
@@ -105,7 +116,7 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
             return
         try:
             handler()
-        except Exception as exc:  # pylint: disable=broad-except
+        except Exception as exc:
             self._send(HTTPStatus.INTERNAL_SERVER_ERROR, error_envelope("internal_error", str(exc)))
 
     def do_POST(self) -> None:
@@ -113,18 +124,26 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
             self._send(HTTPStatus.NOT_FOUND, error_envelope("not_found", "unknown endpoint"))
             return
         try:
-            self._read_json_body()
+            body = self._read_json_body()
+            if self.path == "/api/v1/validate":
+                self._validate(body)
+            elif self.path == "/api/v1/revisions":
+                self._create_revision(body)
+            elif self.path == "/api/v1/apply":
+                self._apply(body)
+            else:
+                self._rollback(body)
         except (ValueError, json.JSONDecodeError) as exc:
             self._send(HTTPStatus.BAD_REQUEST, error_envelope("invalid_json", str(exc)))
-            return
-        self._send(
-            HTTPStatus.NOT_IMPLEMENTED,
-            error_envelope("not_implemented", f"{self.path} requires the 0.3.x revision store"),
-        )
+        except FileNotFoundError:
+            self._send(HTTPStatus.NOT_FOUND, error_envelope("not_found", "revision not found"))
+        except ConflictError as exc:
+            self._send(HTTPStatus.CONFLICT, error_envelope("revision_conflict", str(exc)))
+        except Exception as exc:
+            self._send(HTTPStatus.INTERNAL_SERVER_ERROR, error_envelope("internal_error", str(exc)))
 
     def _status(self) -> None:
-        data = command_json("status", "--json")
-        self._send(HTTPStatus.OK, response_envelope("status", data))
+        self._send(HTTPStatus.OK, response_envelope("status", command_json("status", "--json")))
 
     def _health(self) -> None:
         self._send(HTTPStatus.OK, response_envelope("health", {"status": "ok", "transport": "ready"}))
@@ -133,23 +152,17 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         status = command_json("status", "--json")
         rc, stdout, stderr = run_proxy_ctl("capabilities")
         if rc != 0:
-            detail = stderr.decode("utf-8", errors="replace").strip() or "proxy-ctl capabilities failed"
-            raise RuntimeError(detail)
-        capabilities = [line for line in stdout.decode("utf-8", errors="replace").splitlines() if line]
-        self._send(
-            HTTPStatus.OK,
-            response_envelope(
-                "capabilities",
-                {"backend": status.get("backend", "unknown"), "capabilities": capabilities},
-            ),
-        )
+            raise RuntimeError(stderr.decode("utf-8", errors="replace").strip() or "capabilities failed")
+        caps = [x for x in stdout.decode("utf-8", errors="replace").splitlines() if x]
+        self._send(HTTPStatus.OK, response_envelope("capabilities", {"backend": status.get("backend", "unknown"), "capabilities": caps}))
 
     def _config(self) -> None:
-        data = command_json("config", "export-typed")
-        self._send(HTTPStatus.OK, response_envelope("config", data))
+        self._send(HTTPStatus.OK, response_envelope("config", command_json("config", "export-typed")))
 
     def _events(self) -> None:
-        self._send(HTTPStatus.OK, response_envelope("events", []))
+        raw = subprocess.run(["bash", "-c", 'source "$1"; audit_list', "_", str(AUDIT_STORE)], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False).stdout
+        events = [json.loads(line) for line in raw.decode("utf-8").splitlines() if line]
+        self._send(HTTPStatus.OK, response_envelope("events", events[-100:]))
 
     def _metrics(self) -> None:
         body = b"# HELP proxy_agent_control_api_up Local Control API transport availability\nproxy_agent_control_api_up 1\n"
@@ -160,6 +173,72 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _revisions(self) -> None:
+        names = revision_call("revision_list").decode("utf-8").splitlines()
+        revisions = [int(name[:-5]) for name in names if name.endswith(".json") and name[:-5].isdigit()]
+        self._send(HTTPStatus.OK, response_envelope("revisions", {"current": int(revision_call("revision_current")), "desired": int(revision_call("revision_desired_revision")), "revisions": revisions}))
+
+    @staticmethod
+    def _validate(body: Any) -> None:
+        if not isinstance(body, dict) or not isinstance(body.get("config"), dict):
+            raise ValueError("body.config must be an object")
+        cfg = body["config"]
+        required = {"schema_version", "backend", "listeners", "health", "integrations", "routing", "security"}
+        missing = sorted(required - cfg.keys())
+        if missing:
+            raise ValueError(f"missing required config fields: {', '.join(missing)}")
+        if cfg["schema_version"] != 1 or not isinstance(cfg["backend"], dict) or not cfg["backend"].get("type"):
+            raise ValueError("invalid typed config")
+        if cfg["security"].get("allow_public_listener") is True:
+            raise ValueError("public listener policy requires an explicit authenticated deployment boundary")
+
+    def _create_revision(self, body: Any) -> None:
+        self._validate(body)
+        expected = body.get("if_match_revision")
+        current = int(revision_call("revision_current"))
+        if expected is not None and int(expected) != current:
+            raise ConflictError(f"expected revision {expected}, current revision is {current}")
+        cfg = json.dumps(body["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        actor = str(body.get("actor") or "local-api")
+        summary = str(body.get("change_summary") or "configuration change")
+        rid = int(revision_call("revision_record", cfg, actor, summary, "passed", "pending"))
+        audit_call({"schema_version": 1, "event": "revision.created", "revision": rid, "actor": actor, "timestamp": __import__('time').time_ns() // 1_000_000_000, "change_summary": summary})
+        self._send(HTTPStatus.CREATED, response_envelope("revision", json.loads(revision_call("revision_get", str(rid)))))
+
+    def _apply(self, body: Any) -> None:
+        revision = int(body.get("revision", 0)) if isinstance(body, dict) else 0
+        expected = body.get("if_match_revision") if isinstance(body, dict) else None
+        current = int(revision_call("revision_current"))
+        if expected is not None and int(expected) != current:
+            raise ConflictError(f"expected revision {expected}, current revision is {current}")
+        raw = revision_call("revision_get", str(revision))
+        obj = json.loads(raw)
+        revision_call("revision_set_desired", str(revision), obj["config"] and json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+        actor = str(body.get("actor") or "local-api")
+        audit_call({"schema_version": 1, "event": "desired_state.updated", "revision": revision, "actor": actor, "timestamp": __import__('time').time_ns() // 1_000_000_000})
+        self._send(HTTPStatus.ACCEPTED, response_envelope("apply", {"revision": revision, "desired_revision": int(revision_call("revision_desired_revision")), "runtime": "pending_reconcile"}))
+
+    def _rollback(self, body: Any) -> None:
+        if not isinstance(body, dict) or not body.get("revision"):
+            raise ValueError("revision is required")
+        target = int(body["revision"])
+        current = int(revision_call("revision_current"))
+        expected = body.get("if_match_revision")
+        if expected is not None and int(expected) != current:
+            raise ConflictError(f"expected revision {expected}, current revision is {current}")
+        raw = revision_call("revision_get", str(target))
+        obj = json.loads(raw)
+        actor = str(body.get("actor") or "local-api")
+        summary = f"rollback to revision {target}"
+        rid = int(revision_call("revision_record", json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True), actor, summary, "passed", "pending"))
+        revision_call("revision_set_desired", str(rid), json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+        audit_call({"schema_version": 1, "event": "rollback.requested", "revision": rid, "target_revision": target, "actor": actor, "timestamp": __import__('time').time_ns() // 1_000_000_000})
+        self._send(HTTPStatus.ACCEPTED, response_envelope("rollback", {"revision": rid, "target_revision": target, "desired_revision": int(revision_call("revision_desired_revision")), "runtime": "pending_reconcile"}))
+
+
+class ConflictError(Exception):
+    pass
+
 
 class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     daemon_threads = True
@@ -168,11 +247,7 @@ class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="proxy-agent local Control API v1")
-    parser.add_argument(
-        "--socket",
-        default=os.environ.get("PA_API_SOCKET", "/run/proxy-agent/control.sock"),
-        help="Unix socket path (default: /run/proxy-agent/control.sock)",
-    )
+    parser.add_argument("--socket", default=os.environ.get("PA_API_SOCKET", "/run/proxy-agent/control.sock"))
     return parser.parse_args()
 
 
