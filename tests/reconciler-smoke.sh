@@ -60,7 +60,7 @@ INTEGRATE_NPM="false"
 EOF
 chmod 0600 "$PROFILE_DIR/alpha.conf"
 
-PA_PROFILE_DIR="$PROFILE_DIR" PA_STATE_DIR="$PROFILE_STATE" PA_LOG_DIR="$PROFILE_LOG" \
+PA_PROFILE_DIR="$PROFILE_DIR" PA_STATE_DIR="$PROFILE_STATE" PA_LOG_DIR="$PROFILE_LOG" PROFILE_CONFIG_JSON="$config" \
   bash -c '
     set -euo pipefail
     source "$1/lib/common.sh"
@@ -68,9 +68,8 @@ PA_PROFILE_DIR="$PROFILE_DIR" PA_STATE_DIR="$PROFILE_STATE" PA_LOG_DIR="$PROFILE
     source "$1/lib/profile-context.sh"
     source "$1/lib/revision-store.sh"
     profile_apply_context alpha
-    config='"'"'{"schema_version":1,"profile":"alpha","backend":{"type":"http-connect","options":{"proxy_url":"http://127.0.0.1:3128"}},"listeners":{"socks5":{"bind":"127.0.0.1","port":1080},"http":{"enabled":false,"bind":"127.0.0.1","port":8118}},"routing":{"direct_cidrs":[],"direct_domains":[],"no_proxy_extra":[],"rules":[]},"health":{"network_required":false,"timeout":10,"retries":1,"backoff":1,"auto_recover":true,"targets":[]},"integrations":{"git":false,"docker":false,"pip":false,"npm":false},"security":{"ssh_host_key_checking":"yes","allow_public_listener":false}}'"'"'
-    rid="$(revision_record "$config" smoke 'profile reconciler smoke' passed pending)"
-    revision_set_desired "$rid" "$config"
+    rid="$(revision_record "$PROFILE_CONFIG_JSON" smoke "profile reconciler smoke" passed pending)"
+    revision_set_desired "$rid" "$PROFILE_CONFIG_JSON"
     "$1/bin/proxy-agent-reconcile" >"$2/profile-result.json"
   ' _ "$ROOT" "$TMP"
 
