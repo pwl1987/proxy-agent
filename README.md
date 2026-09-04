@@ -7,9 +7,10 @@
 ## 目标
 
 - **Backend 可插拔**：当前支持 SSH → SOCKS5，后续可扩展 HTTP CONNECT、sing-box、mihomo 等。
+- **Adapter 可插拔**：当前提供可选 Privoxy HTTP adapter。
 - **Routing 与 Backend 解耦**：直连 / 代理由策略决定，而不是写死在部署脚本里。
 - **安全默认值**：本地监听默认 `127.0.0.1`，SSH host key 校验默认开启。
-- **应用适配**：Git、curl 等优先通过统一代理环境；需要 HTTP 代理的客户端可选启用 Privoxy adapter。
+- **应用适配**：Git、Docker、pip、npm 通过独立 integration 模块生成配置，不让主控制器继续膨胀。
 - **可诊断**：`status`、`test`、`diagnose`、`route`、`doctor` 提供明确故障定位信息。
 - **VM / container**：核心逻辑尽量无状态，systemd、Docker 等作为运行时适配层。
 
@@ -78,9 +79,24 @@ proxy-ctl diagnose
 proxy-ctl doctor
 proxy-ctl route <host-or-ip>
 proxy-ctl env [--off]
+proxy-ctl integration <git|docker|pip|npm|all>
 ```
 
 `route` 目前解释 domain / IPv4 CIDR 策略；它是策略诊断命令，不会修改系统路由表。
+
+## Application integrations
+
+Integration 命令只生成配置/命令，不默认修改用户系统配置：
+
+```bash
+proxy-ctl integration git
+proxy-ctl integration docker
+proxy-ctl integration pip
+proxy-ctl integration npm
+proxy-ctl integration all
+```
+
+Git 支持 SOCKS5；Docker、pip、npm 当前要求 `HTTP_ENABLED=true`，因为这些客户端的通用配置路径不能假定原生 SOCKS 支持。启用 HTTP adapter 后，再使用相应 integration 输出的命令。
 
 ## HTTP adapter
 
@@ -96,6 +112,16 @@ sudo systemctl enable --now proxy-agent-health.timer
 
 健康检查会按配置执行重试；失败后可自动执行一次 `proxy-ctl restart` 并再次验证。`PA_STATE_DIR` 下保存最近的 healthy / unhealthy / recovered 时间戳。
 
+## 安装器
+
+默认安装到 `/opt/proxy-agent`；也支持通过环境变量覆盖：
+
+```bash
+sudo PREFIX=/srv/proxy-agent ./install.sh
+```
+
+systemd health unit 会同步使用自定义 `PREFIX`。
+
 ## 架构
 
 ```text
@@ -103,23 +129,20 @@ sudo systemctl enable --now proxy-agent-health.timer
                     |      proxy-ctl       |
                     +----------+-----------+
                                |
-              +----------------+----------------+
-              |                |                |
-          Config           Routing          Health
-              |                |                |
-              +----------------+----------------+
+          +--------------------+---------------------+
+          |                    |                     |
+       Config               Routing               Health
+          |                    |                     |
+          +--------------------+---------------------+
                                |
-                       Backend interface
+                      Backend / Adapter
+                         |            |
+                    ssh-socks      privoxy
+                         |            |
+                      SOCKS5      HTTP proxy
                                |
-                    +----------+-----------+
-                    |                      |
-               ssh-socks              future...
-                    |
-              autossh / ssh
-                    |
-                  SOCKS5
-                    |
-             optional Privoxy
+                      Integrations
+                git / docker / pip / npm
 ```
 
 ## 安全边界
@@ -132,6 +155,6 @@ sudo systemctl enable --now proxy-agent-health.timer
 
 ## 项目状态
 
-当前为 **v2 foundation**。已形成清晰的 Config → Routing → Backend → Adapter → Health 分层，并开始迁移原型中的验证能力；下一阶段重点是应用集成、更多 backend、容器运行时与更完整的测试矩阵。
+当前为 **v2 foundation**。Config → Routing → Backend → Adapter → Health → Integration 的边界已经建立；下一阶段重点是多 backend、容器运行时、配置 profile，以及更完整的集成测试矩阵。
 
 许可证：MIT
