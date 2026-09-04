@@ -33,12 +33,13 @@ ln -sf "$PREFIX/bin/proxy-agent-profile" "$BIN/proxy-agent-profile"
 ln -sf "$PREFIX/bin/proxy-agent-version" "$BIN/proxy-agent-version"
 
 install -d -m 0755 /etc/systemd/system
-for unit in proxy-agent.service proxy-agent@.service proxy-agent-health.service proxy-agent-health@.service; do
+for unit in proxy-agent.service proxy-agent@.service proxy-agent-health.service proxy-agent-health@.service proxy-agent-reconcile.service; do
   sed -e "s#@PREFIX@#$PREFIX#g" -e "s#@SERVICE_USER@#$SERVICE_USER#g" -e "s#@SERVICE_GROUP@#$SERVICE_GROUP#g" \
     "$ROOT/systemd/$unit" >"/etc/systemd/system/$unit"
 done
-install -m 0644 "$ROOT/systemd/proxy-agent-health.timer" /etc/systemd/system/proxy-agent-health.timer
-install -m 0644 "$ROOT/systemd/proxy-agent-health@.timer" /etc/systemd/system/proxy-agent-health@.timer
+for unit in proxy-agent-health.timer proxy-agent-health@.timer proxy-agent-reconcile.timer; do
+  install -m 0644 "$ROOT/systemd/$unit" "/etc/systemd/system/$unit"
+done
 
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload
@@ -55,3 +56,4 @@ echo "Next: provision an SSH key readable by $SERVICE_USER, edit the config, the
 echo "TUI: proxy-ctl tui"
 echo "Optional health loop: systemctl enable --now proxy-agent-health.timer"
 echo "Profile health: systemctl enable --now proxy-agent-health@<name>.timer"
+echo "Optional desired-state projection loop: systemctl enable --now proxy-agent-reconcile.timer"
