@@ -5,9 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=%h/.local/bin/proxy-ctl run
-ExecStop=%h/.local/bin/proxy-ctl stop
-ExecReload=%h/.local/bin/proxy-ctl restart
+ExecStart=@BIN@/proxy-ctl run
+ExecStop=@BIN@/proxy-ctl stop
+ExecReload=@BIN@/proxy-ctl restart
 Restart=on-failure
 RestartSec=3
 KillMode=control-group
