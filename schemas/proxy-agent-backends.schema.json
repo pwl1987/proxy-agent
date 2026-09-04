@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/pwl1987/proxy-agent/schema/proxy-agent-backends.schema.json",
+  "title": "proxy-agent backend capability contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "backends"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "backends": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"$ref": "#/$defs/backend"}
+    }
+  },
+  "$defs": {
+    "option": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "type", "required"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "type": {"type": "string", "enum": ["string", "integer", "boolean", "secret_ref"]},
+        "required": {"type": "boolean"}
+      }
+    },
+    "backend": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["managed", "capabilities", "options"],
+      "properties": {
+        "managed": {"type": "boolean"},
+        "capabilities": {
+          "type": "array",
+          "items": {"type": "string", "enum": ["socks5", "http_native", "dynamic_dns", "stream_proxy"]},
+          "uniqueItems": true
+        },
+        "derived_capabilities": {
+          "type": "object",
+          "additionalProperties": {"type": "string", "minLength": 1}
+        },
+        "options": {"type": "array", "items": {"$ref": "#/$defs/option"}}
+      }
+    }
+  }
+}
