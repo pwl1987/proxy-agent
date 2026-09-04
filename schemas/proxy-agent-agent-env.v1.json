@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/pwl1987/proxy-agent/schema/proxy-agent-agent-env.v1.json",
+  "title": "proxy-agent Agent Network Environment v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "profile", "http_proxy", "https_proxy", "all_proxy", "no_proxy"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "profile": {"type": "string", "minLength": 1},
+    "http_proxy": {"type": "string"},
+    "https_proxy": {"type": "string"},
+    "all_proxy": {"type": "string"},
+    "no_proxy": {"type": "string"}
+  },
+  "examples": [
+    {
+      "schema_version": 1,
+      "profile": "agent",
+      "http_proxy": "http://127.0.0.1:3128",
+      "https_proxy": "http://127.0.0.1:3128",
+      "all_proxy": "",
+      "no_proxy": "127.0.0.0/8,localhost"
+    }
+  ]
+}
