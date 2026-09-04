@@ -30,9 +30,9 @@ jobs:
             grep -Eq '^\[(Unit|Service|Timer|Install)\]$' "$unit"
           done
           grep -q '^Type=simple$' systemd/proxy-agent.service
-          grep -q '^Environment=PA_FOREGROUND=true$' systemd/proxy-agent.service
+          grep -q '^ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl run$' systemd/proxy-agent.service
           grep -q '^Type=simple$' systemd/proxy-agent@.service
-          grep -q '^Environment=PA_FOREGROUND=true$' systemd/proxy-agent@.service
+          grep -q '^ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl --profile %i run$' systemd/proxy-agent@.service
           grep -q '^Requires=proxy-agent@%i.service$' systemd/proxy-agent-health@.service
           grep -q '^ExecStart=.*proxy-agent-health --profile %i$' systemd/proxy-agent-health@.service
           grep -q '^Unit=proxy-agent-health@%i.service$' systemd/proxy-agent-health@.timer
