@@ -55,6 +55,7 @@ INTEGRATE_DOCKER="false"
 INTEGRATE_PIP="false"
 INTEGRATE_NPM="false"
 EOF
+chmod 0600 "$TMP/bootstrap.conf"
 PA_STATE_DIR="$TMP/bootstrap-state" PA_BOOTSTRAP_CONFIG="$TMP/bootstrap.conf" PA_CONFIG="$TMP/bootstrap.conf" "$ROOT/bin/proxy-agent-reconcile" --bootstrap >"$TMP/bootstrap-result.json"
 python3 - "$TMP/bootstrap-result.json" "$TMP/bootstrap-state" <<'PY'
 import json, sys
@@ -67,7 +68,7 @@ assert (state / "runtime" / "proxy-agent.conf").is_file()
 assert (state / "runtime" / "reconcile-state.json").is_file()
 PY
 
-PA_STATE_DIR="$TMP/activate-state" mkdir -p "$TMP/activate-state"
+mkdir -p "$TMP/activate-state"
 PA_STATE_DIR="$TMP/activate-state" source "$ROOT/lib/revision-store.sh"
 PA_STATE_DIR="$TMP/activate-state" rid2="$(revision_record "$config" smoke 'activation smoke' passed pending)"
 PA_STATE_DIR="$TMP/activate-state" revision_set_desired "$rid2" "$config"
