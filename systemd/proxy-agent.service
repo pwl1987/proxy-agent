@@ -1,0 +1,20 @@
+[Unit]
+Description=proxy-agent universal proxy backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl start
+ExecStop=/bin/bash @PREFIX@/bin/proxy-ctl stop
+ExecReload=/bin/bash @PREFIX@/bin/proxy-ctl restart
+Restart=on-failure
+RestartSec=3
+KillMode=control-group
+TimeoutStopSec=10
+
+# proxy-ctl starts the active backend in foreground mode when PA_FOREGROUND=true.
+Environment=PA_FOREGROUND=true
+
+[Install]
+WantedBy=multi-user.target
