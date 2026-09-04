@@ -46,6 +46,24 @@ fi
 revision_set_desired_if_match 2 2 "$config"
 [[ "$(revision_desired_revision)" == 2 ]]
 
+# The lock must serialize concurrent writers without duplicate revision IDs.
+for i in $(seq 1 10); do
+  ( revision_record "$config" "concurrent-$i" "concurrent" "passed" "pending" >"$TMP/revision-$i" ) &
+done
+status=0
+for pid in $(jobs -pr); do
+  if ! wait "$pid"; then status=1; fi
+done
+if (( status != 0 )); then
+  echo 'concurrent revision writer failed' >&2; exit 1
+fi
+sort -n "$TMP"/revision-* >"$TMP/revision-ids"
+[[ "$(cat "$TMP/revision-ids")" == $'3\n4\n5\n6\n7\n8\n9\n10\n11\n12' ]]
+[[ "$(revision_current)" == 12 ]]
+for id in $(seq 3 12); do
+  [[ -s "$(revision_file "$id")" ]] || { echo "missing concurrent revision $id" >&2; exit 1; }
+done
+
 # A lock directory without owner metadata is a crash window. It must not be
 # deleted immediately; after the stale threshold a writer may recover it.
 lock="$(revision_lock_dir)"
