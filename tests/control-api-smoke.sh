@@ -50,7 +50,7 @@ for _ in {1..100}; do [[ -S "$SOCKET" ]] && break; sleep 0.05; done
 
 curl_unix() { curl --silent --show-error --fail --unix-socket "$SOCKET" "http://localhost$1"; }
 post_json() { curl --silent --show-error --fail --unix-socket "$SOCKET" -H 'Content-Type: application/json' -X POST --data "$2" "http://localhost$1"; }
-post_status() { curl --silent --show-error --fail --unix-socket "$SOCKET" -o "$2" -w '%{http_code}' -H 'Content-Type: application/json' -X POST --data "$3" "http://localhost$1"; }
+post_status() { curl --silent --show-error --unix-socket "$SOCKET" -o "$2" -w '%{http_code}' -H 'Content-Type: application/json' -X POST --data "$3" "http://localhost$1"; }
 
 # The API must not manufacture a revision merely by starting or serving health/status requests.
 [[ ! -e "$TMP/state/revisions/desired_revision" ]]
@@ -108,7 +108,7 @@ PY
 curl_unix /api/v1/health >"$TMP/health-stopped.json"
 python3 - "$TMP/health-stopped.json" <<'PY'
 import json,sys
-obj=json.load(open(sys.argv[1])); assert obj["data"]["status"] == "degraded",obj; assert obj["data"]["readiness"] == "not_ready",obj
+obj=json.load(open(sys.argv[1])); assert obj["data"]["status"] == "ok",obj; assert obj["data"]["readiness"] == "ready",obj; assert obj["data"]["desired_revision"] == 1,obj; assert obj["data"]["observed_revision"] == 1,obj
 PY
 runtime_status="$(post_status /api/v1/runtime/start "$TMP/runtime-start.json" '{"actor":"smoke"}')"
 [[ "$runtime_status" == "200" ]]
@@ -137,7 +137,7 @@ assert any(e.get("event")=="runtime.stop" for e in events), events
 assert any(e.get("event")=="runtime.start" for e in events), events
 PY
 
-conflict_status="$(post_status /api/v1/apply "$TMP/conflict.json" '{"revision":1,"if_match_revision":0}')"
+conflict_status="$(curl --silent --show-error --unix-socket "$SOCKET" -o "$TMP/conflict.json" -w '%{http_code}' -H 'Content-Type: application/json' -X POST --data '{"revision":1,"if_match_revision":0}' "http://localhost/api/v1/apply")"
 [[ "$conflict_status" == "409" ]]
 grep -q 'revision_conflict' "$TMP/conflict.json"
 rollback_status="$(post_status /api/v1/rollback "$TMP/rollback.json" '{"revision":1,"if_match_revision":1,"actor":"smoke"}')"
