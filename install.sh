@@ -8,8 +8,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 [[ $EUID -eq 0 ]] || { echo 'install.sh must run as root' >&2; exit 1; }
 
-install -d -m 0755 "$PREFIX" "$ETC" "$BIN" "$PREFIX/systemd"
-cp -a "$ROOT/bin" "$ROOT/lib" "$ROOT/backends" "$ROOT/adapters" "$ROOT/systemd" "$PREFIX/"
+install -d -m 0755 "$PREFIX" "$ETC" "$BIN"
+cp -a "$ROOT/bin" "$ROOT/lib" "$ROOT/backends" "$ROOT/adapters" "$ROOT/integrations" "$ROOT/systemd" "$PREFIX/"
 install -m 0644 "$ROOT/proxy-agent.conf.example" "$ETC/proxy-agent.conf.example"
 if [[ ! -e "$ETC/proxy-agent.conf" ]]; then
   install -m 0600 "$ROOT/proxy-agent.conf.example" "$ETC/proxy-agent.conf"
@@ -34,7 +34,7 @@ ExecReload=/bin/bash $PREFIX/bin/proxy-ctl restart
 WantedBy=multi-user.target
 EOF
 
-install -m 0644 "$ROOT/systemd/proxy-agent-health.service" /etc/systemd/system/proxy-agent-health.service
+sed "s#@PREFIX@#$PREFIX#g" "$ROOT/systemd/proxy-agent-health.service" >/etc/systemd/system/proxy-agent-health.service
 install -m 0644 "$ROOT/systemd/proxy-agent-health.timer" /etc/systemd/system/proxy-agent-health.timer
 
 if command -v systemctl >/dev/null 2>&1; then
