@@ -13,10 +13,7 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
 }
 
-load_config() {
-  [[ -r "$PA_CONFIG" ]] || die "config not found: $PA_CONFIG"
-  # shellcheck disable=SC1090
-  source "$PA_CONFIG"
+apply_config_defaults() {
   : "${BACKEND:=ssh-socks}"
   : "${SOCKS_BIND:=127.0.0.1}"
   : "${SOCKS_PORT:=1080}"
@@ -24,6 +21,21 @@ load_config() {
   : "${HTTP_BIND:=127.0.0.1}"
   : "${HTTP_PORT:=8118}"
   : "${HEALTH_TIMEOUT:=10}"
+  : "${HEALTH_RETRIES:=2}"
+  : "${HEALTH_BACKOFF:=2}"
+  : "${HEALTH_AUTO_RECOVER:=true}"
+  : "${SSH_STRICT_HOST_KEY_CHECKING:=yes}"
+  : "${INTEGRATE_GIT:=false}"
+  : "${INTEGRATE_DOCKER:=false}"
+  : "${INTEGRATE_PIP:=false}"
+  : "${INTEGRATE_NPM:=false}"
+}
+
+load_config() {
+  [[ -r "$PA_CONFIG" ]] || die "config not found: $PA_CONFIG"
+  # shellcheck disable=SC1090
+  source "$PA_CONFIG"
+  apply_config_defaults
 }
 
 expand_home() {
