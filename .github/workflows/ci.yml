@@ -41,6 +41,8 @@ jobs:
         run: bash tests/backend-capability-manifest-smoke.sh
       - name: Control API smoke
         run: bash tests/control-api-smoke.sh
+      - name: Revision store smoke
+        run: bash tests/revision-store-smoke.sh
       - name: Backend contract smoke
         run: bash tests/backend-contract-smoke.sh
       - name: HTTP CONNECT smoke
@@ -80,6 +82,7 @@ jobs:
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl env
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl status --json
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl status --json=v2
+          PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl config export-typed >/tmp/proxy-agent/typed.json
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl health-history --limit 1
           ! PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl doctor
       - name: Rootless installer smoke
