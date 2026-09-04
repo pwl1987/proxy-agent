@@ -9,6 +9,7 @@ source "$ROOT/lib/backend.sh"
 source "$ROOT/lib/route.sh"
 source "$ROOT/lib/config.sh"
 source "$ROOT/adapters/privoxy.sh"
+source "$ROOT/lib/state.sh"
 
 PROFILE_NAME="${PA_PROFILE:-}"
 if [[ "${1:-}" == "--profile" ]]; then
@@ -38,9 +39,34 @@ cmd_start() {
   config_validate
   backend_start
   if ! adapter_start; then backend_stop; die 'proxy adapter failed to start'; fi
-  log "started profile=${PROFILE_NAME:-default} backend=$BACKEND endpoint=$(backend_endpoint) http=${HTTP_ENABLED:-false} foreground=${PA_FOREGROUND:-false}"
+  state_mark_started
+  state_sync
+  log "started profile=${PROFILE_NAME:-default} backend=$BACKEND endpoint=$(backend_endpoint) http=${HTTP_ENABLED:-false}"
 }
-cmd_stop() { adapter_stop; backend_stop; log 'stopped'; }
+cmd_stop() {
+  adapter_stop
+  backend_stop
+  state_mark_stopped
+  state_sync
+  log 'stopped'
+}
+cmd_run() {
+  config_validate
+  cmd_start
+  local pid
+  trap 'cmd_stop >/dev/null 2>&1 || true' TERM INT EXIT
+  if backend_managed >/dev/null 2>&1 && pid="$(backend_pid 2>/dev/null || true)" && [[ "$pid" =~ ^[0-9]+$ ]]; then
+    if wait "$pid"; then
+      return 0
+    fi
+    warn "managed backend process $pid exited unexpectedly"
+    return 1
+  fi
+  while :; do
+    sleep 3600 &
+    wait "$!" || true
+  done
+}
 cmd_restart() { cmd_stop; sleep 1; cmd_start; }
 json_quote() {
   local value="$1"
@@ -52,6 +78,11 @@ json_quote() {
   printf '"%s"' "$value"
 }
 cmd_status() {
+  if [[ "${1:-}" == '--json=v2' ]]; then
+    state_sync
+    cat "$(state_file)"
+    return 0
+  fi
   if [[ "${1:-}" == '--json' ]]; then
     local backend_state='stopped' adapter_state='disabled' endpoint
     backend_status >/dev/null 2>&1 && backend_state='listening'
@@ -168,25 +199,27 @@ cmd_doctor() {
 usage() {
   cat <<'EOF'
 Usage: proxy-ctl [--profile NAME] <command>
-  validate                validate configuration and backend contract
-  start                   start configured backend and adapters
-  stop                    stop adapters and backend
-  restart                 restart configured stack
-  status [--json]         show runtime state
-  test                    test configured targets via active proxy path
-  diagnose                inspect dependencies/config/runtime
-  doctor                  check unsafe or inconsistent configuration
-  route <host-or-ip>      explain ordered routing decision
-  env [--off]             print shell commands for proxy environment
-  integration <app|all>   print application integration commands
+  validate                 validate configuration and backend contract
+  start                    start configured backend and adapters
+  run                      start stack and remain attached for service managers
+  stop                     stop adapters and backend
+  restart                  restart configured stack
+  status [--json|--json=v2] show runtime state
+  test                     test configured targets via active proxy path
+  diagnose                 inspect dependencies/config/runtime
+  doctor                   check unsafe or inconsistent configuration
+  route <host-or-ip>       explain ordered routing decision
+  env [--off]              print shell commands for proxy environment
+  integration <app|all>    print application integration commands
   profiles [list|show|path] [name]
-  capabilities            list backend capabilities
-  tui                     open interactive terminal dashboard
+  capabilities             list backend capabilities
+  tui                      open interactive terminal dashboard
 EOF
 }
 case "${1:-}" in
   validate) cmd_validate ;;
   start) cmd_start ;;
+  run) cmd_run ;;
   stop) cmd_stop ;;
   restart) cmd_restart ;;
   status) shift; cmd_status "${1:-}" ;;
