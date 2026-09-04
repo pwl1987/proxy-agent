@@ -11,7 +11,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ludeeus/action-shellcheck@2.0.0
         with:
-          scandir: './bin ./lib ./backends ./adapters'
+          scandir: './bin ./lib ./backends ./adapters ./integrations'
 
   smoke:
     runs-on: ubuntu-latest
@@ -19,9 +19,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Syntax check
         run: |
-          find bin lib backends adapters -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
+          find bin lib backends adapters integrations -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
           bash -n install.sh
-      - name: CLI help and policy smoke
+      - name: Functional smoke suite
+        run: bash tests/smoke.sh
+      - name: CLI policy smoke
         run: |
           mkdir -p /tmp/proxy-agent
           cp proxy-agent.conf.example /tmp/proxy-agent/proxy-agent.conf
@@ -29,5 +31,5 @@ jobs:
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl route example.com
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl route example.cn
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl route 10.12.34.56
+          PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl integration all
           ! PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl doctor
-        continue-on-error: false
