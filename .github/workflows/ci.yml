@@ -27,6 +27,8 @@ jobs:
           find bin lib backends adapters integrations tests -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
           bash -n install.sh
           bash -n install-user.sh
+      - name: Backend contract smoke
+        run: bash tests/backend-contract-smoke.sh
       - name: systemd unit contract smoke
         run: |
           for unit in systemd/*.service systemd/*.timer systemd-user/*.service systemd-user/*.timer; do
