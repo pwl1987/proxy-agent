@@ -5,6 +5,7 @@ PREFIX="${PREFIX:-$HOME/.local/lib/proxy-agent}"
 CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 ETC="$CONFIG_HOME/proxy-agent"
 BIN="${BIN:-$HOME/.local/bin}"
+SYSTEMD_USER_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 SERVICE_NAME="${SERVICE_NAME:-proxy-agent.service}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -22,25 +23,39 @@ backup_root="$(mktemp -d "${TMPDIR:-/tmp}/proxy-agent-user-upgrade.XXXXXX")"
 cleanup_backup() { rm -rf -- "$backup_root"; }
 trap cleanup_backup EXIT
 
-if [[ -d "$PREFIX" ]]; then
-  mkdir -p "$backup_root/prefix"
-  cp -a "$PREFIX"/. "$backup_root/prefix/"
-fi
+backup_tree() {
+  local source="$1" target="$2"
+  if [[ -d "$source" ]]; then
+    mkdir -p "$target"
+    cp -a "$source"/. "$target/"
+  fi
+}
+
+backup_tree "$PREFIX" "$backup_root/prefix"
+backup_tree "$ETC" "$backup_root/etc"
+backup_tree "$SYSTEMD_USER_DIR" "$backup_root/systemd-user"
+
+restore_path() {
+  local target="$1" backup="$2"
+  rm -rf -- "$target"
+  if [[ -d "$backup" ]]; then
+    mkdir -p "$(dirname "$target")"
+    cp -a "$backup" "$target"
+  fi
+}
 
 restore_previous() {
   printf '升级校验失败，正在恢复上一版本……\n' >&2
-  if [[ -d "$backup_root/prefix" ]]; then
-    rm -rf -- "$PREFIX"
-    mkdir -p "$(dirname "$PREFIX")"
-    cp -a "$backup_root/prefix" "$PREFIX"
-  fi
+  restore_path "$PREFIX" "$backup_root/prefix"
+  restore_path "$ETC" "$backup_root/etc"
+  restore_path "$SYSTEMD_USER_DIR" "$backup_root/systemd-user"
   if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
     systemctl --user daemon-reload || true
     if $was_active; then
       systemctl --user start "$SERVICE_NAME" || true
     fi
   fi
-  printf '已恢复上一版本；请检查升级日志后再重试。\n' >&2
+  printf '已恢复上一版本的程序、配置、Profile 和用户 systemd 单元；请检查升级日志后再重试。\n' >&2
 }
 
 if $was_active; then
