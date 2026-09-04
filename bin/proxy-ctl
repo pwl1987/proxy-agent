@@ -119,7 +119,7 @@ cmd_diagnose() {
   echo "backend: $BACKEND"
   echo "SOCKS: ${SOCKS_BIND}:${SOCKS_PORT}"
   echo "HTTP:  ${HTTP_ENABLED:-false} ${HTTP_BIND}:${HTTP_PORT}"
-  if [[ "${REMOTE_HOST:-}" == *.* ]]; then
+  if [[ -n "${REMOTE_HOST:-}" && "${REMOTE_HOST:-}" != *example.com ]]; then
     getent hosts "$REMOTE_HOST" || warn "cannot resolve $REMOTE_HOST"
   fi
   if ! port_listening "$SOCKS_PORT"; then warn "SOCKS listener is down"; fi
@@ -153,10 +153,10 @@ cmd_route() {
   local host="${1:-}"
   [[ -n "$host" ]] || die 'usage: proxy-ctl route <host-or-ip>'
 
-  local item domain
+  local item
   IFS=',' read -r -a items <<< "${DIRECT_DOMAINS:-}"
   for item in "${items[@]}"; do
-    item="${item#\.}"
+    item="${item#.}"
     [[ -n "$item" ]] || continue
     if [[ "$host" == "$item" || "$host" == *".$item" ]]; then
       echo "DIRECT  $host  (domain policy: $item)"
@@ -202,6 +202,7 @@ cmd_doctor() {
   [[ "$SOCKS_BIND" != '0.0.0.0' ]] || { warn 'SOCKS is exposed on all interfaces'; rc=1; }
   [[ "${SSH_STRICT_HOST_KEY_CHECKING:-yes}" == 'yes' ]] || { warn 'SSH host-key verification is disabled'; rc=1; }
   [[ -n "${REMOTE_HOST:-}" ]] || { warn 'REMOTE_HOST is empty'; rc=1; }
+  [[ "${REMOTE_HOST:-}" != 'proxy.example.com' ]] || { warn 'REMOTE_HOST still uses the example placeholder'; rc=1; }
   [[ "$SOCKS_PORT" =~ ^[0-9]+$ && "$SOCKS_PORT" -ge 1 && "$SOCKS_PORT" -le 65535 ]] || { warn 'invalid SOCKS_PORT'; rc=1; }
   if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then
     [[ "$HTTP_PORT" =~ ^[0-9]+$ && "$HTTP_PORT" -ge 1 && "$HTTP_PORT" -le 65535 ]] || { warn 'invalid HTTP_PORT'; rc=1; }
