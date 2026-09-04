@@ -25,7 +25,10 @@ assert "config" in revision["required"]
 assert audit["properties"]["schema_version"]["const"] == 1
 assert "desired_state.activation_failed" in audit["properties"]["event"]["enum"]
 assert control["properties"]["api_version"]["const"] == "v1"
-assert control["transport"]["required"] == ["kind", "default"] if "required" in control["transport"] else True
+example = control["examples"][0]
+assert example["transport"]["kind"] == "http"
+assert example["transport"]["default"] == "unix"
+assert example["transport"]["remote"] is False
 assert backend["schema_version"] == 1
 print("control-plane schema smoke: PASS")
 PY
