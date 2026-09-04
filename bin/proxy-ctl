@@ -42,7 +42,11 @@ adapter_start() {
   backend_require_capability socks5
   adapter_privoxy_start
 }
-adapter_stop() { [[ "${HTTP_ENABLED:-false}" == "true" ]] && adapter_privoxy_stop; }
+adapter_stop() {
+  if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then
+    adapter_privoxy_stop
+  fi
+}
 cmd_validate() { config_validate; }
 cmd_start() {
   config_validate
@@ -210,15 +214,12 @@ cmd_exec() {
   [[ -z "${NO_PROXY_EXTRA:-}" ]] || no_proxy="${no_proxy:+${no_proxy},}${NO_PROXY_EXTRA}"
 
   if [[ "$mode" == 'off' ]]; then
-    env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy -- "$@"
+    env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy "$@"
     return $?
   fi
 
-  local endpoint http_proxy_value https_proxy_value all_proxy_value
+  local endpoint http_proxy_value='' https_proxy_value='' all_proxy_value=''
   endpoint="$(backend_endpoint)"
-  http_proxy_value=''
-  https_proxy_value=''
-  all_proxy_value=''
 
   if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then
     http_proxy_value="http://${HTTP_BIND}:${HTTP_PORT}"
@@ -231,14 +232,12 @@ cmd_exec() {
     all_proxy_value="$endpoint"
   fi
 
-  env \
-    ${http_proxy_value:+HTTP_PROXY="$http_proxy_value"} \
-    ${https_proxy_value:+HTTPS_PROXY="$https_proxy_value"} \
-    ${all_proxy_value:+ALL_PROXY="$all_proxy_value"} \
-    ${http_proxy_value:+http_proxy="$http_proxy_value"} \
-    ${https_proxy_value:+https_proxy="$https_proxy_value"} \
-    ${all_proxy_value:+all_proxy="$all_proxy_value"} \
-    NO_PROXY="$no_proxy" no_proxy="$no_proxy" -- "$@"
+  local -a env_args=()
+  [[ -n "$http_proxy_value" ]] && env_args+=("HTTP_PROXY=$http_proxy_value" "http_proxy=$http_proxy_value")
+  [[ -n "$https_proxy_value" ]] && env_args+=("HTTPS_PROXY=$https_proxy_value" "https_proxy=$https_proxy_value")
+  [[ -n "$all_proxy_value" ]] && env_args+=("ALL_PROXY=$all_proxy_value" "all_proxy=$all_proxy_value")
+  env_args+=("NO_PROXY=$no_proxy" "no_proxy=$no_proxy")
+  env "${env_args[@]}" "$@"
 }
 cmd_integration() { exec "$ROOT/bin/proxy-agent-integration" "${1:-}"; }
 cmd_tui() { exec "$ROOT/bin/proxy-agent-tui"; }
