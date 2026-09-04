@@ -69,7 +69,7 @@ assert status["data"]["backend"] == "local-endpoint" and status["data"]["current
 assert caps["data"]["backend"] == "local-endpoint" and caps["data"]["capabilities"] == ["http_native", "stream_proxy"], caps
 assert config["data"]["schema_version"] == 1 and config["data"]["backend"]["type"] == "local-endpoint", config
 assert revisions["data"] == {"current":0,"desired":0,"revisions":[]}, revisions
-assert "proxy_agent_control_api_up 1" in metrics
+assert "proxy_agent_control_api_up 1" in metrics, metrics
 PY
 
 cat >"$TMP/revision.json" <<'EOF'
@@ -78,7 +78,7 @@ EOF
 post_json /api/v1/revisions "$(cat "$TMP/revision.json")" >"$TMP/revision-created.json"
 python3 - "$TMP/revision-created.json" <<'PY'
 import json,sys
-assert json.load(open(sys.argv[1]))["data"]["revision"] == 1
+obj=json.load(open(sys.argv[1])); assert obj["data"]["revision"] == 1, obj
 PY
 curl_unix /api/v1/revisions/1 >"$TMP/revision-detail.json"
 grep -q '"revision":1' "$TMP/revision-detail.json"
@@ -86,7 +86,7 @@ grep -q '"revision":1' "$TMP/revision-detail.json"
 post_json /api/v1/apply '{"revision":1,"if_match_revision":1,"actor":"smoke"}' >"$TMP/applied.json"
 python3 - "$TMP/applied.json" <<'PY'
 import json,sys
-obj=json.load(open(sys.argv[1])); assert obj["data"]["reconcile"]["status"] == "activated"; assert obj["data"]["reconcile"]["observed_revision"] == 1
+obj=json.load(open(sys.argv[1])); assert obj["data"]["reconcile"]["status"] == "activated", obj; assert obj["data"]["reconcile"]["observed_revision"] == 1, obj
 PY
 curl_unix /api/v1/health >"$TMP/health-applied.json"
 python3 - "$TMP/health-applied.json" <<'PY'
@@ -98,18 +98,18 @@ runtime_status="$(post_status /api/v1/runtime/stop "$TMP/runtime-stop.json" '{"a
 [[ "$runtime_status" == "200" ]]
 python3 - "$TMP/runtime-stop.json" <<'PY'
 import json,sys
-obj=json.load(open(sys.argv[1])); assert obj["kind"] == "runtime"; assert obj["data"]["action"] == "stop"
+obj=json.load(open(sys.argv[1])); assert obj["kind"] == "runtime", obj; assert obj["data"]["action"] == "stop", obj
 PY
 curl_unix /api/v1/health >"$TMP/health-stopped.json"
 python3 - "$TMP/health-stopped.json" <<'PY'
 import json,sys
-obj=json.load(open(sys.argv[1])); assert obj["data"]["status"] == "degraded"; assert obj["data"]["readiness"] == "not_ready"
+obj=json.load(open(sys.argv[1])); assert obj["data"]["status"] == "degraded",obj; assert obj["data"]["readiness"] == "not_ready",obj
 PY
 runtime_status="$(post_status /api/v1/runtime/start "$TMP/runtime-start.json" '{"actor":"smoke"}')"
 [[ "$runtime_status" == "200" ]]
 python3 - "$TMP/runtime-start.json" <<'PY'
 import json,sys
-obj=json.load(open(sys.argv[1])); assert obj["data"]["action"] == "start"
+obj=json.load(open(sys.argv[1])); assert obj["data"]["action"] == "start", obj
 PY
 curl_unix /api/v1/health >"$TMP/health-started.json"
 python3 - "$TMP/health-started.json" <<'PY'
@@ -120,16 +120,16 @@ PY
 curl_unix /api/v1/status >"$TMP/status-applied.json"
 python3 - "$TMP/status-applied.json" <<'PY'
 import json,sys
-obj=json.load(open(sys.argv[1])); assert obj["data"]["desired_revision"] == 1; assert obj["data"]["control"]["observed_revision"] == 1
+obj=json.load(open(sys.argv[1])); assert obj["data"]["desired_revision"] == 1,obj; assert obj["data"]["control"]["observed_revision"] == 1,obj
 PY
 curl_unix /api/v1/events >"$TMP/events.json"
 python3 - "$TMP/events.json" <<'PY'
 import json,sys
 events=json.load(open(sys.argv[1]))["data"]
-assert any(e.get("event")=="revision.created" and e.get("revision")==1 for e in events)
-assert any(e.get("event")=="desired_state.activated" and e.get("revision")==1 for e in events)
-assert any(e.get("event")=="runtime.stop" for e in events)
-assert any(e.get("event")=="runtime.start" for e in events)
+assert any(e.get("event")=="revision.created" and e.get("revision")==1 for e in events), events
+assert any(e.get("event")=="desired_state.activated" and e.get("revision")==1 for e in events), events
+assert any(e.get("event")=="runtime.stop" for e in events), events
+assert any(e.get("event")=="runtime.start" for e in events), events
 PY
 
 conflict_status="$(post_status /api/v1/apply "$TMP/conflict.json" '{"revision":1,"if_match_revision":0}')"
@@ -139,6 +139,6 @@ rollback_status="$(post_status /api/v1/rollback "$TMP/rollback.json" '{"revision
 [[ "$rollback_status" == "202" ]]
 python3 - "$TMP/rollback.json" <<'PY'
 import json,sys
-obj=json.load(open(sys.argv[1])); assert obj["data"]["reconcile"]["status"] == "activated"; assert obj["data"]["reconcile"]["observed_revision"] == obj["data"]["revision"]
+obj=json.load(open(sys.argv[1])); assert obj["data"]["reconcile"]["status"] == "activated",obj; assert obj["data"]["reconcile"]["observed_revision"] == obj["data"]["revision"],obj
 PY
 printf 'control API smoke: PASS\n'
