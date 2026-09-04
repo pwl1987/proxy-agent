@@ -1,6 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+route_wildcard_regex() {
+  python3 - "$1" <<'PY'
+import re
+import sys
+pattern = sys.argv[1]
+print(re.escape(pattern).replace(r'\*', '.*'))
+PY
+}
+
 route_rule_match() {
   local host="${1,,}" matcher="$2" pattern="${3,,}"
   case "$matcher" in
@@ -12,8 +21,8 @@ route_rule_match() {
       [[ "$host" == "$pattern" || "$host" == *".$pattern" ]]
       ;;
     wildcard)
-      local re="${pattern//./\\.}"
-      re="${re//\*/.*}"
+      local re
+      re="$(route_wildcard_regex "$pattern")"
       [[ "$host" =~ ^${re}$ ]]
       ;;
     cidr)
@@ -64,7 +73,7 @@ route_validate_rules() {
         ;;
       cidr)
         valid_ipv4_cidr "$pattern" || {
-          printf '[config] ERROR: ROUTE_RULES line %d has invalid CIDR: %s\n' "$line_no" "$pattern" >&2
+          printf '[config] ERROR: ROUTE_RULES line %d has invalid CIDR: %s\n' "$line_no" >&2
           errors=$((errors + 1))
         }
         ;;
