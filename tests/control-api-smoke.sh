@@ -81,6 +81,7 @@ cat >"$TMP/revision.json" <<'EOF'
 {"config":{"schema_version":1,"profile":"default","backend":{"type":"http-connect","options":{"proxy_url":"http://127.0.0.1:8080"}},"listeners":{"socks5":{"bind":"127.0.0.1","port":1080}},"routing":{"direct_cidrs":[],"direct_domains":[],"no_proxy_extra":[],"rules":[]},"health":{"network_required":false,"timeout":10,"retries":1,"backoff":1,"auto_recover":true,"targets":[]},"integrations":{"git":true,"docker":false,"pip":false,"npm":false},"security":{"ssh_host_key_checking":"yes","allow_public_listener":false}},"actor":"smoke","change_summary":"test revision"}
 EOF
 post_json /api/v1/revisions "$(cat "$TMP/revision.json")" >"$TMP/revision-created.json"
+cat "$TMP/revision-created.json"
 python3 - "$TMP/revision-created.json" <<'PY'
 import json, sys
 obj=json.load(open(sys.argv[1]))
@@ -104,7 +105,7 @@ obj=json.load(open(sys.argv[1]))
 assert obj["kind"] == "apply"
 assert obj["data"]["revision"] == 1
 assert obj["data"]["desired_revision"] == 1
-assert obj["data"]["reconcile"]["status"] == "projected"
+assert obj["data"]["reconcile"]["status"] == "activated"
 assert obj["data"]["reconcile"]["observed_revision"] == 1
 PY
 
@@ -122,7 +123,7 @@ import json, sys
 obj=json.load(open(sys.argv[1]))
 events=obj["data"]
 assert any(e.get("event") == "revision.created" and e.get("revision") == 1 for e in events)
-assert any(e.get("event") == "desired_state.reconciled" and e.get("revision") == 1 for e in events)
+assert any(e.get("event") == "desired_state.activated" and e.get("revision") == 1 for e in events)
 PY
 
 conflict_status="$(curl --silent --show-error --unix-socket "$SOCKET" -o "$TMP/conflict.json" -w '%{http_code}' -H 'Content-Type: application/json' -X POST --data '{"revision":1,"if_match_revision":0}' http://localhost/api/v1/apply)"
@@ -134,7 +135,7 @@ rollback_status="$(curl --silent --show-error --unix-socket "$SOCKET" -o "$TMP/r
 python3 - "$TMP/rollback.json" <<'PY'
 import json, sys
 obj=json.load(open(sys.argv[1]))
-assert obj["data"]["reconcile"]["status"] == "projected"
+assert obj["data"]["reconcile"]["status"] == "activated"
 assert obj["data"]["reconcile"]["observed_revision"] == obj["data"]["revision"]
 PY
 
