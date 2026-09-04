@@ -93,11 +93,12 @@ def bootstrap_desired() -> int:
     return revision
 
 
-def activate(runtime_config: Path, desired_revision: int, state_path: Path) -> dict[str, object]:
+def activate(candidate_config: Path, runtime_config: Path, desired_revision: int, state_path: Path) -> dict[str, object]:
     backup = runtime_config.with_name(f".{runtime_config.name}.previous")
     had_previous = runtime_config.exists()
     previous_active = os.environ.get("PA_RUNTIME_ACTIVE_CONFIG", "")
     previous_source: Optional[Path] = Path(previous_active) if previous_active else None
+
     if had_previous:
         shutil.copy2(runtime_config, backup)
         previous_source = backup
@@ -109,17 +110,21 @@ def activate(runtime_config: Path, desired_revision: int, state_path: Path) -> d
                 backup.unlink()
             raise RuntimeError(old_stop.stderr.strip() or "failed to stop previous runtime")
 
-    candidate_start = run_proxy_ctl(runtime_config, "start")
-    if candidate_start.returncode:
+    try:
+        os.replace(candidate_config, runtime_config)
+        candidate_config = runtime_config
+        candidate_start = run_proxy_ctl(runtime_config, "start")
+        if candidate_start.returncode:
+            raise RuntimeError(candidate_start.stderr.strip() or "candidate runtime activation failed")
+    except Exception as exc:
         if had_previous and backup.exists():
             os.replace(backup, runtime_config)
             restored = run_proxy_ctl(runtime_config, "start")
             if restored.returncode:
-                raise RuntimeError(
-                    (candidate_start.stderr.strip() or "candidate runtime activation failed")
-                    + "; rollback runtime start also failed"
-                )
-        raise RuntimeError(candidate_start.stderr.strip() or "candidate runtime activation failed")
+                raise RuntimeError(f"{exc}; rollback runtime start also failed") from exc
+        elif runtime_config.exists():
+            runtime_config.unlink()
+        raise
 
     if backup.exists():
         backup.unlink()
@@ -174,11 +179,16 @@ def main() -> int:
         runtime_dir = state_dir / "runtime"
         runtime_config = runtime_dir / "proxy-agent.conf"
         observed_state = runtime_dir / "reconcile-state.json"
-        atomic_write(runtime_config, exporter.stdout)
-
         if args.activate:
-            result = activate(runtime_config, desired_revision, observed_state)
+            candidate_config = runtime_dir / f".proxy-agent.conf.candidate.{os.getpid()}"
+            atomic_write(candidate_config, exporter.stdout)
+            try:
+                result = activate(candidate_config, runtime_config, desired_revision, observed_state)
+            finally:
+                if candidate_config.exists():
+                    candidate_config.unlink()
         else:
+            atomic_write(runtime_config, exporter.stdout)
             result = {
                 "schema_version": 1,
                 "status": "projected",
