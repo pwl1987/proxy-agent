@@ -205,7 +205,7 @@ cmd_history() { exec "$ROOT/bin/proxy-agent-health-history" "${@}"; }
 cmd_config() {
   case "${1:-}" in
     export-typed)
-      config_validate || return 1
+      config_validate >/dev/null || return 1
       require_cmd python3
       exec env \
         BACKEND="$BACKEND" \
