@@ -2,6 +2,7 @@
 set -euo pipefail
 
 integration_docker_print() {
+  integration_require_http docker
   local proxy no_proxy
   proxy="$(integration_proxy_url)"
   no_proxy="$(integration_no_proxy)"
