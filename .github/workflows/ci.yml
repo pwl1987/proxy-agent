@@ -100,6 +100,26 @@ jobs:
       - name: Rootless installer smoke
         run: bash tests/rootless-smoke.sh
 
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build container image
+        run: docker build --pull -f Containerfile -t proxy-agent:ci .
+      - name: Verify non-root runtime and CLI
+        run: |
+          test "$(docker image inspect proxy-agent:ci --format '{{.Config.User}}')" = 'proxy-agent'
+          docker run --rm --entrypoint /bin/sh proxy-agent:ci -c '
+            set -eu
+            test "$(id -u)" -ne 0
+            /opt/proxy-agent/bin/proxy-agent-version
+            /opt/proxy-agent/bin/proxy-ctl --help >/dev/null
+          '
+      - name: Verify container entrypoint contract
+        run: |
+          test "$(docker image inspect proxy-agent:ci --format '{{json .Config.Entrypoint}}')" = '["/opt/proxy-agent/bin/proxy-ctl"]'
+          test "$(docker image inspect proxy-agent:ci --format '{{json .Config.Cmd}}')" = '["run"]'
+
   real-backends:
     if: github.event_name == 'workflow_dispatch'
     strategy:
