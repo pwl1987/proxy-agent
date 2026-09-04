@@ -72,7 +72,7 @@ assert status["api_version"] == "v1"
 assert status["kind"] == "status"
 assert status["data"]["backend"] == "local-endpoint"
 assert caps["data"]["backend"] == "local-endpoint"
-assert caps["data"]["capabilities"] == ["stream_proxy"]
+assert caps["data"]["capabilities"] == ["http_native", "stream_proxy"]
 assert config["data"]["schema_version"] == 1
 assert config["data"]["backend"]["type"] == "local-endpoint"
 assert "proxy_agent_control_api_up 1" in metrics
