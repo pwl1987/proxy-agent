@@ -35,9 +35,11 @@ done
 install -m 0644 "$ROOT/systemd-user/proxy-agent-health.timer" "$SYSTEMD_USER_DIR/proxy-agent-health.timer"
 install -m 0644 "$ROOT/systemd-user/proxy-agent-health@.timer" "$SYSTEMD_USER_DIR/proxy-agent-health@.timer"
 
-if command -v systemctl >/dev/null 2>&1; then
+if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
   systemctl --user daemon-reload
   systemctl --user enable proxy-agent.service >/dev/null
+else
+  echo 'User systemd manager is not available in this session; user unit files were installed but not enabled.' >&2
 fi
 
 echo "Installed rootless proxy-agent to $PREFIX"
