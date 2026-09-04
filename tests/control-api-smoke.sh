@@ -42,7 +42,7 @@ INTEGRATE_NPM="false"
 EOF
 chmod 0600 "$CONFIG"
 
-env -u PA_PROFILE -u PA_ACTIVE_PROFILE PA_CONFIG="$CONFIG" PA_API_SOCKET="$SOCKET" PA_STATE_DIR="$TMP/state" python3 "$ROOT/bin/proxy-agent-api" --socket "$SOCKET" >"$TMP/api.out" 2>"$TMP/api.err" &
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" env -i PATH="$PATH" HOME="$HOME" PA_CONFIG="$CONFIG" PA_API_SOCKET="$SOCKET" PA_STATE_DIR="$TMP/state" PA_LOG_DIR="$TMP/log" /usr/bin/python3 "$ROOT/bin/proxy-agent-api" --socket "$SOCKET" >"$TMP/api.out" 2>"$TMP/api.err" &
 PID=$!
 for _ in {1..100}; do [[ -S "$SOCKET" ]] && break; sleep 0.05; done
 [[ -S "$SOCKET" ]]
