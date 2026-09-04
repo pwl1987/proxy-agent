@@ -5,6 +5,7 @@
 ## 中文文档导航
 
 - [CLI 参考](CLI.zh-CN.md)
+- [Control API v1](CONTROL-API.md)
 - [运维手册](OPERATIONS.zh-CN.md)
 - [容器部署](CONTAINER.zh-CN.md)
 - [Host / Container 网络](NETWORKING.zh-CN.md)
@@ -70,6 +71,7 @@ proxy-ctl diagnose
 proxy-ctl doctor
 proxy-ctl route <主机名或IPv4>
 proxy-ctl env [--off]
+proxy-ctl exec [--off] <命令> [参数...]
 proxy-ctl integration <git|docker|pip|npm|all>
 proxy-ctl profiles [list|show|path] [名称]
 proxy-ctl capabilities
@@ -146,7 +148,25 @@ proxy-ctl integration all
 
 集成命令默认只输出建议配置，不直接修改用户系统文件。
 
-## 9. 容器
+## 9. Control API v1
+
+系统级安装后可运行本机 Control API：
+
+```bash
+sudo systemctl enable --now proxy-agent-api.service
+```
+
+默认使用：
+
+```text
+/run/proxy-agent/control.sock
+```
+
+Control API 负责 revision、desired/observed state、apply/rollback 与 audit；不提供未经认证的远程管理入口。
+
+详细合同见：[Control API v1](CONTROL-API.md)。
+
+## 10. 容器
 
 容器入口统一为：
 
@@ -158,7 +178,7 @@ proxy-ctl run
 
 详细说明见：[容器部署](CONTAINER.zh-CN.md) 和 [Host / Container 网络](NETWORKING.zh-CN.md)。
 
-## 10. 安全默认值
+## 11. 安全默认值
 
 - SOCKS 默认绑定 `127.0.0.1`。
 - SSH host key 校验默认开启。
@@ -167,8 +187,9 @@ proxy-ctl run
 - 配置在 `source` 前进行 ownership/mode 检查。
 - systemd 使用专用低权限账户和 sandbox。
 - rootless runtime/log 使用 XDG 路径。
+- Control API 默认只通过 `0600` Unix socket 提供本机控制。
 
-## 11. 发布与回滚
+## 12. 发布与回滚
 
 发布使用 tag 驱动：tag 必须与 `VERSION` 严格一致。
 
@@ -176,7 +197,7 @@ proxy-ctl run
 
 详细流程见：[发布与回滚](RELEASE.zh-CN.md)。
 
-## 12. 英文机器接口与中文运维界面
+## 13. 英文机器接口与中文运维界面
 
 项目采用“双层语言策略”：
 
