@@ -39,8 +39,18 @@ DIRECT_CIDRS="127.0.0.0/8"
 DIRECT_DOMAINS="localhost"
 EOF
 
+cat >"$TMP/bad-local.conf" <<'EOF'
+BACKEND="local-endpoint"
+LOCAL_PROXY_URL="http://127.0.0.1:3128"
+HTTP_ENABLED="true"
+HTTP_PORT="70000"
+HEALTH_TIMEOUT="0"
+ROUTE_RULES=$'x|DIRECT|suffix|internal.example\n20|NOPE|exact|example.com'
+EOF
+
 run() { PA_CONFIG="$TMP/config" PA_STATE_DIR="$TMP/state" bash "$ROOT/bin/proxy-ctl" "$@"; }
 run_local() { PA_CONFIG="$TMP/local.conf" PA_STATE_DIR="$TMP/local-state" bash "$ROOT/bin/proxy-ctl" "$@"; }
+run_bad() { PA_CONFIG="$TMP/bad-local.conf" PA_STATE_DIR="$TMP/bad-state" bash "$ROOT/bin/proxy-ctl" "$@"; }
 run_profile() { PA_PROFILE_DIR="$TMP/profiles" bash "$ROOT/bin/proxy-ctl" --profile work "$@"; }
 run_integration() { PA_CONFIG="$TMP/config" bash "$ROOT/bin/proxy-agent-integration" "$@"; }
 run_profile_inspect() { PA_PROFILE_DIR="$TMP/profiles" bash "$ROOT/bin/proxy-agent-profile" "$@"; }
@@ -48,7 +58,7 @@ run_profile_inspect() { PA_PROFILE_DIR="$TMP/profiles" bash "$ROOT/bin/proxy-age
 for file in \
   "$ROOT/bin/proxy-ctl" "$ROOT/bin/proxy-agent-health" "$ROOT/bin/proxy-agent-integration" "$ROOT/bin/proxy-agent-profile" \
   "$ROOT/bin/proxy-agent-tui" "$ROOT/install.sh" "$ROOT/adapters/privoxy.sh" "$ROOT/backends/ssh-socks.sh" "$ROOT/backends/local-endpoint.sh" \
-  "$ROOT/lib/common.sh" "$ROOT/lib/profile.sh" "$ROOT/lib/backend-capabilities.sh" "$ROOT/lib/backend.sh" "$ROOT/lib/route.sh" \
+  "$ROOT/lib/common.sh" "$ROOT/lib/profile.sh" "$ROOT/lib/backend-capabilities.sh" "$ROOT/lib/backend.sh" "$ROOT/lib/route.sh" "$ROOT/lib/config.sh" \
   "$ROOT/integrations/common.sh" "$ROOT/integrations/git.sh" "$ROOT/integrations/docker.sh" "$ROOT/integrations/pip.sh" "$ROOT/integrations/npm.sh"; do
   bash -n "$file"
 done
@@ -57,6 +67,11 @@ done
 source "$ROOT/lib/common.sh"
 source "$ROOT/lib/route.sh"
 [[ "$(route_explain 'API.Example.Net')" == PROXY* ]]
+valid_ipv4_cidr "10.0.0.0/8"
+valid_ipv4_cidr "172.16.0.0/12"
+valid_ipv4_cidr "192.168.0.0/16"
+! valid_ipv4_cidr "999.1.1.1/8"
+! valid_ipv4_cidr "10.0.0.0/33"
 ! cidr_contains "999.1.1.1" "10.0.0.0/8"
 [[ "$(route_explain "10.12.34.56")" == PROXY* ]]
 
@@ -71,6 +86,8 @@ source "$ROOT/lib/route.sh"
 [[ "$(run capabilities | grep -c '^socks5$')" -eq 1 ]]
 [[ "$(run status --json | grep -c '"schema_version":1')" -eq 1 ]]
 [[ "$(run status --json | grep -c '"endpoint":"socks5h://127.0.0.1:1080"')" -eq 1 ]]
+[[ "$(run_local validate | grep -c '^configuration valid:')" -eq 1 ]]
+! run_bad validate >/dev/null 2>&1
 [[ "$(run_local status --json | grep -c '"backend":"local-endpoint"')" -eq 1 ]]
 [[ "$(run_local capabilities | grep -c '^socks5$')" -eq 1 ]]
 [[ "$(run_local diagnose | grep -c '^OK    curl$')" -eq 1 ]]

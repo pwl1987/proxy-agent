@@ -26,13 +26,55 @@ route_rule_match() {
 }
 
 route_rule_line() {
-  local line="$1" priority action matcher pattern
-  IFS='|' read -r priority action matcher pattern <<< "$line"
+  local line="$1" priority action matcher pattern extra
+  IFS='|' read -r priority action matcher pattern extra <<< "$line"
+  [[ -z "${extra:-}" && -n "${pattern:-}" ]] || return 1
   [[ "$priority" =~ ^[0-9]+$ ]] || return 1
   [[ "$action" == DIRECT || "$action" == PROXY ]] || return 1
   [[ "$matcher" == exact || "$matcher" == suffix || "$matcher" == wildcard || "$matcher" == cidr ]] || return 1
-  [[ -n "$pattern" ]] || return 1
   printf '%s\t%s\t%s\t%s\n' "$priority" "$action" "$matcher" "$pattern"
+}
+
+route_validate_rules() {
+  local line priority action matcher pattern extra line_no=0 errors=0
+  [[ -z "${ROUTE_RULES:-}" ]] && return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line_no=$((line_no + 1))
+    [[ -z "$line" ]] && continue
+    IFS='|' read -r priority action matcher pattern extra <<< "$line"
+    if [[ -n "${extra:-}" || -z "${pattern:-}" ]]; then
+      printf '[config] ERROR: ROUTE_RULES line %d must be priority|action|matcher|pattern\n' "$line_no" >&2
+      errors=$((errors + 1))
+      continue
+    fi
+    if [[ ! "$priority" =~ ^[0-9]+$ ]]; then
+      printf '[config] ERROR: ROUTE_RULES line %d has invalid priority: %s\n' "$line_no" "$priority" >&2
+      errors=$((errors + 1))
+    fi
+    if [[ "$action" != DIRECT && "$action" != PROXY ]]; then
+      printf '[config] ERROR: ROUTE_RULES line %d has invalid action: %s\n' "$line_no" "$action" >&2
+      errors=$((errors + 1))
+    fi
+    case "$matcher" in
+      exact|suffix|wildcard)
+        [[ "$pattern" != *[[:space:]]* ]] || {
+          printf '[config] ERROR: ROUTE_RULES line %d pattern contains whitespace\n' "$line_no" >&2
+          errors=$((errors + 1))
+        }
+        ;;
+      cidr)
+        valid_ipv4_cidr "$pattern" || {
+          printf '[config] ERROR: ROUTE_RULES line %d has invalid CIDR: %s\n' "$line_no" "$pattern" >&2
+          errors=$((errors + 1))
+        }
+        ;;
+      *)
+        printf '[config] ERROR: ROUTE_RULES line %d has invalid matcher: %s\n' "$line_no" "$matcher" >&2
+        errors=$((errors + 1))
+        ;;
+    esac
+  done <<< "$ROUTE_RULES"
+  return "$errors"
 }
 
 route_explain() {

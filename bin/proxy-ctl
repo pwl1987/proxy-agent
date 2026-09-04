@@ -7,6 +7,7 @@ source "$ROOT/lib/profile.sh"
 source "$ROOT/lib/backend-capabilities.sh"
 source "$ROOT/lib/backend.sh"
 source "$ROOT/lib/route.sh"
+source "$ROOT/lib/config.sh"
 source "$ROOT/adapters/privoxy.sh"
 
 PROFILE_NAME="${PA_PROFILE:-}"
@@ -19,18 +20,9 @@ fi
 if [[ -n "$PROFILE_NAME" ]]; then
   profile_load "$PROFILE_NAME"
   PA_STATE_DIR="${PA_STATE_DIR:-/run/proxy-agent}/${PROFILE_NAME}"
+  apply_config_defaults
 else
   load_config
-fi
-
-if [[ -n "$PROFILE_NAME" ]]; then
-  : "${BACKEND:=ssh-socks}"
-  : "${SOCKS_BIND:=127.0.0.1}"
-  : "${SOCKS_PORT:=1080}"
-  : "${HTTP_ENABLED:=false}"
-  : "${HTTP_BIND:=127.0.0.1}"
-  : "${HTTP_PORT:=8118}"
-  : "${HEALTH_TIMEOUT:=10}"
 fi
 
 backend_load
@@ -41,7 +33,9 @@ adapter_start() {
   adapter_privoxy_start
 }
 adapter_stop() { [[ "${HTTP_ENABLED:-false}" == "true" ]] && adapter_privoxy_stop; }
+cmd_validate() { config_validate; }
 cmd_start() {
+  config_validate
   backend_start
   if ! adapter_start; then backend_stop; die 'proxy adapter failed to start'; fi
   log "started profile=${PROFILE_NAME:-default} backend=$BACKEND endpoint=$(backend_endpoint) http=${HTTP_ENABLED:-false} foreground=${PA_FOREGROUND:-false}"
@@ -174,22 +168,24 @@ cmd_doctor() {
 usage() {
   cat <<'EOF'
 Usage: proxy-ctl [--profile NAME] <command>
-  start                  start configured backend and adapters
-  stop                   stop adapters and backend
-  restart                restart configured stack
-  status [--json]        show runtime state
-  test                   test configured targets via active proxy path
-  diagnose               inspect dependencies/config/runtime
-  doctor                 check unsafe or inconsistent configuration
-  route <host-or-ip>     explain ordered routing decision
-  env [--off]            print shell commands for proxy environment
-  integration <app|all>  print application integration commands
+  validate                validate configuration and backend contract
+  start                   start configured backend and adapters
+  stop                    stop adapters and backend
+  restart                 restart configured stack
+  status [--json]         show runtime state
+  test                    test configured targets via active proxy path
+  diagnose                inspect dependencies/config/runtime
+  doctor                  check unsafe or inconsistent configuration
+  route <host-or-ip>      explain ordered routing decision
+  env [--off]             print shell commands for proxy environment
+  integration <app|all>   print application integration commands
   profiles [list|show|path] [name]
-  capabilities           list backend capabilities
-  tui                    open interactive terminal dashboard
+  capabilities            list backend capabilities
+  tui                     open interactive terminal dashboard
 EOF
 }
 case "${1:-}" in
+  validate) cmd_validate ;;
   start) cmd_start ;;
   stop) cmd_stop ;;
   restart) cmd_restart ;;
