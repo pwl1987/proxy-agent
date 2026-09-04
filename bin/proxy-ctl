@@ -214,13 +214,15 @@ cmd_exec() {
   [[ -z "${NO_PROXY_EXTRA:-}" ]] || no_proxy="${no_proxy:+${no_proxy},}${NO_PROXY_EXTRA}"
 
   if [[ "$mode" == 'off' ]]; then
-    env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy "$@"
+    (
+      unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy NO_PROXY no_proxy
+      exec "$@"
+    )
     return $?
   fi
 
   local endpoint http_proxy_value='' https_proxy_value='' all_proxy_value=''
   endpoint="$(backend_endpoint)"
-
   if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then
     http_proxy_value="http://${HTTP_BIND}:${HTTP_PORT}"
     https_proxy_value="$http_proxy_value"
@@ -232,19 +234,18 @@ cmd_exec() {
     all_proxy_value="$endpoint"
   fi
 
-  local -a env_args=()
-  if [[ -n "$http_proxy_value" ]]; then
-    env_args+=("HTTP_PROXY=$http_proxy_value" "http_proxy=$http_proxy_value")
-  else
-    env_args+=(-u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy)
-  fi
-  if [[ -n "$all_proxy_value" ]]; then
-    env_args+=("ALL_PROXY=$all_proxy_value" "all_proxy=$all_proxy_value")
-  else
-    env_args+=(-u ALL_PROXY -u all_proxy)
-  fi
-  env_args+=("NO_PROXY=$no_proxy" "no_proxy=$no_proxy")
-  env "${env_args[@]}" "$@"
+  (
+    unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy NO_PROXY no_proxy
+    if [[ -n "$http_proxy_value" ]]; then
+      export HTTP_PROXY="$http_proxy_value" HTTPS_PROXY="$https_proxy_value"
+      export http_proxy="$http_proxy_value" https_proxy="$https_proxy_value"
+    fi
+    if [[ -n "$all_proxy_value" ]]; then
+      export ALL_PROXY="$all_proxy_value" all_proxy="$all_proxy_value"
+    fi
+    export NO_PROXY="$no_proxy" no_proxy="$no_proxy"
+    exec "$@"
+  )
 }
 cmd_integration() { exec "$ROOT/bin/proxy-agent-integration" "${1:-}"; }
 cmd_tui() { exec "$ROOT/bin/proxy-agent-tui"; }
