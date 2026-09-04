@@ -39,6 +39,7 @@ LOCAL_PROXY_STATUS_TARGET="https://example.com"
 HTTP_ENABLED="false"
 DIRECT_CIDRS="127.0.0.0/8"
 DIRECT_DOMAINS="localhost"
+HEALTH_NETWORK_REQUIRED="false"
 EOF
 chmod 0600 "$TMP/local.conf"
 
@@ -66,7 +67,7 @@ run_profile_inspect() { PA_PROFILE_DIR="$TMP/profiles" bash "$ROOT/bin/proxy-age
 for file in \
   "$ROOT/bin/proxy-ctl" "$ROOT/bin/proxy-agent-health" "$ROOT/bin/proxy-agent-integration" "$ROOT/bin/proxy-agent-profile" \
   "$ROOT/bin/proxy-agent-tui" "$ROOT/install.sh" "$ROOT/install-user.sh" "$ROOT/adapters/privoxy.sh" "$ROOT/backends/ssh-socks.sh" "$ROOT/backends/local-endpoint.sh" \
-  "$ROOT/lib/common.sh" "$ROOT/lib/profile.sh" "$ROOT/lib/backend-capabilities.sh" "$ROOT/lib/backend.sh" "$ROOT/lib/route.sh" "$ROOT/lib/config.sh" "$ROOT/lib/state.sh" \
+  "$ROOT/lib/common.sh" "$ROOT/lib/profile.sh" "$ROOT/lib/backend-capabilities.sh" "$ROOT/lib/backend.sh" "$ROOT/lib/route.sh" "$ROOT/lib/config.sh" "$ROOT/lib/state.sh" "$ROOT/lib/health.sh" \
   "$ROOT/integrations/common.sh" "$ROOT/integrations/git.sh" "$ROOT/integrations/docker.sh" "$ROOT/integrations/pip.sh" "$ROOT/integrations/npm.sh"; do
   bash -n "$file"
 done
@@ -74,6 +75,9 @@ done
 source "$ROOT/lib/common.sh"
 source "$ROOT/lib/route.sh"
 source "$ROOT/lib/state.sh"
+source "$ROOT/lib/health.sh"
+apply_config_defaults
+[[ "$HEALTH_NETWORK_REQUIRED" == false ]]
 [[ "$(route_explain 'API.Example.Net')" == PROXY* ]]
 valid_ipv4_cidr "10.0.0.0/8"
 valid_ipv4_cidr "172.16.0.0/12"
