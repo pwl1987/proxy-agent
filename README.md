@@ -18,8 +18,6 @@ Host / Container 网络：[`docs/NETWORKING.zh-CN.md`](docs/NETWORKING.zh-CN.md)
 
 发布与回滚：[`docs/RELEASE.zh-CN.md`](docs/RELEASE.zh-CN.md)
 
-Control API v1：[`docs/CONTROL-API.md`](docs/CONTROL-API.md)
-
 > 项目采用“双层语言策略”：面向人的 CLI/TUI/运维文档默认中文；JSON schema、环境变量、backend contract 和机器接口保持稳定英文。
 
 ## 当前能力
@@ -32,6 +30,7 @@ Control API v1：[`docs/CONTROL-API.md`](docs/CONTROL-API.md)
 - **健康语义分层**：backend liveness 与实际 network health 分离，并支持受控自动恢复。
 - **可观测性**：`status --json=v2` 与追加式 health-history JSONL。
 - **控制面**：本地 Control API v1 提供 revision、desired/observed state、apply/rollback 和 audit。
+- **Agent Network Environment**：`proxy-ctl agent install/status/env` 为 Coding/Automation Agent 提供统一、可机器消费的代理环境合同。
 - **安全默认值**：本地代理默认绑定 `127.0.0.1`；托管 backend 停止前验证进程 ownership。
 - **运维 TUI**：中文终端控制台提供状态、测试、诊断、分流和 Profile 操作。
 
@@ -93,7 +92,21 @@ proxy-ctl --profile office status
 proxy-ctl --profile office start
 proxy-ctl --profile office test
 proxy-ctl --profile office route github.com
+proxy-ctl --profile office health-history
 ```
+
+## Agent Network Environment
+
+Agent 环境复用现有 Profile 和 Control Plane，不管理第三方 Agent 账号、模型 Key 或私钥。
+
+```bash
+proxy-ctl agent install --profile coding --from-config /path/to/proxy-agent.conf
+proxy-ctl agent status --profile coding --json
+proxy-ctl agent env --profile coding --shell bash
+proxy-ctl agent env --profile coding --json
+```
+
+机器接口 schema：`schemas/proxy-agent-agent-env.v1.json`。`proxy-ctl exec` 可直接在同一代理环境中运行任意命令，避免调用方自行维护环境变量拼接逻辑。
 
 ## CLI
 
@@ -113,7 +126,9 @@ proxy-ctl exec [--off] <command> [args...]
 proxy-ctl integration <git|docker|pip|npm|all>
 proxy-ctl profiles [list|show|path] [name]
 proxy-ctl capabilities
+proxy-ctl config export-typed
 proxy-ctl health-history [--limit N] [--json]
+proxy-ctl agent <install|status|env> [options]
 proxy-ctl tui
 ```
 
@@ -181,20 +196,6 @@ systemctl --user enable --now proxy-agent-health.timer
 
 容器采用非 root `proxy-agent` 用户，并以 `proxy-ctl run` 作为前台唯一生命周期进程。
 
-Control API systemd：
-
-```bash
-sudo systemctl enable --now proxy-agent-api.service
-```
-
-默认监听：
-
-```text
-/run/proxy-agent/control.sock
-```
-
-详见 [`docs/CONTROL-API.md`](docs/CONTROL-API.md)。
-
 ## 安全边界
 
 - SOCKS 默认只监听 loopback。
@@ -204,7 +205,6 @@ sudo systemctl enable --now proxy-agent-api.service
 - `source` 配置之前检查 ownership / mode。
 - systemd 使用专用低权限账户和 sandbox。
 - rootless 使用 XDG 路径。
-- Control API 默认只通过 `0600` Unix socket 提供本机控制。
 
 ## Release engineering
 
@@ -212,17 +212,11 @@ sudo systemctl enable --now proxy-agent-api.service
 
 ```text
 main CI
-  ↓
 tag v0.2.x
-  ↓
 VERSION/tag consistency
-  ↓
 container build
-  ↓
 GHCR push
-  ↓
 immutable digest capture
-  ↓
 GitHub Release
 ```
 
@@ -233,9 +227,15 @@ GitHub Release
 CI 包含：
 
 - ShellCheck
-- Bash syntax
-- Backend contract smoke
-- HTTP CONNECT smoke
-- Control API / revision / reconciler smoke
-- Control API validation / activation failure smoke
-- Container / systemd / rootless contract smoke
+- Shell syntax
+- Typed config / legacy compatibility
+- Control API / revision / audit
+- Agent Environment contract
+- Backend contract
+- HTTP CONNECT
+- Reconciler
+- Container runtime
+- systemd contract
+- Functional smoke
+- TUI / localization / CLI policy
+- Rootless installer
