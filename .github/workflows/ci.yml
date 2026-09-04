@@ -39,4 +39,5 @@ jobs:
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl integration all
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl capabilities
           PA_PROFILE_DIR=/tmp/proxy-agent/profiles bash bin/proxy-agent-profile list
+          PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl env
           ! PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl doctor
