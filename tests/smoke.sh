@@ -26,14 +26,19 @@ INTEGRATE_PIP="false"
 INTEGRATE_NPM="false"
 EOF
 
-run() { PA_CONFIG="$TMP/config" bash "$ROOT/bin/proxy-ctl" "$@"; }
+mkdir -p "$TMP/profiles"
+sed 's/REMOTE_HOST="proxy.example.com"/REMOTE_HOST="profile.example"/' "$TMP/config" >"$TMP/profiles/work.conf"
+
+run() { PA_CONFIG="$TMP/config" PA_STATE_DIR="$TMP/state" bash "$ROOT/bin/proxy-ctl" "$@"; }
+run_profile() { PA_PROFILE_DIR="$TMP/profiles" bash "$ROOT/bin/proxy-ctl" --profile work "$@"; }
 run_integration() { PA_CONFIG="$TMP/config" bash "$ROOT/bin/proxy-agent-integration" "$@"; }
+run_profile_inspect() { PA_PROFILE_DIR="$TMP/profiles" bash "$ROOT/bin/proxy-agent-profile" "$@"; }
 
 for file in \
-  "$ROOT/bin/proxy-ctl" "$ROOT/bin/proxy-agent-health" "$ROOT/bin/proxy-agent-integration" \
-  "$ROOT/install.sh" "$ROOT/adapters/privoxy.sh" "$ROOT/backends/ssh-socks.sh" \
-  "$ROOT/lib/common.sh" "$ROOT/integrations/common.sh" "$ROOT/integrations/git.sh" \
-  "$ROOT/integrations/docker.sh" "$ROOT/integrations/pip.sh" "$ROOT/integrations/npm.sh"; do
+  "$ROOT/bin/proxy-ctl" "$ROOT/bin/proxy-agent-health" "$ROOT/bin/proxy-agent-integration" "$ROOT/bin/proxy-agent-profile" \
+  "$ROOT/bin/proxy-agent-tui" "$ROOT/install.sh" "$ROOT/adapters/privoxy.sh" "$ROOT/backends/ssh-socks.sh" \
+  "$ROOT/lib/common.sh" "$ROOT/lib/profile.sh" "$ROOT/lib/backend-capabilities.sh" \
+  "$ROOT/integrations/common.sh" "$ROOT/integrations/git.sh" "$ROOT/integrations/docker.sh" "$ROOT/integrations/pip.sh" "$ROOT/integrations/npm.sh"; do
   bash -n "$file"
 done
 
@@ -43,6 +48,11 @@ done
 [[ "$(run route 8.8.8.8)" == PROXY* ]]
 [[ "$(run env | grep -c '^unset HTTP_PROXY')" -eq 1 ]]
 [[ "$(run env | grep -c '^export ALL_PROXY=')" -eq 1 ]]
+[[ "$(run capabilities | grep -c '^socks5$')" -eq 1 ]]
+[[ "$(run_profile status | grep -c 'profile: work')" -eq 1 ]]
+[[ "$(run_profile status | grep -c 'remote: proxy@profile.example:22')" -eq 1 ]]
+[[ "$(run_profile_inspect list | grep -c '^work$')" -eq 1 ]]
+[[ "$(run_profile_inspect show work | grep -c 'REMOTE_SSH_KEY=\"<redacted>\"')" -eq 1 ]]
 [[ "$(run_integration git | grep -c 'git config --global http.proxy')" -eq 1 ]]
 [[ "$(run_integration docker 2>/dev/null)" == *disabled* ]] || true
 ! run doctor
