@@ -30,7 +30,7 @@ jobs:
           bash -n install-user.sh
           bash -n upgrade.sh
           bash -n upgrade-user.sh
-          python3 -m py_compile lib/legacy-typed-export.py bin/proxy-agent-api
+          python3 -m py_compile lib/legacy-typed-export.py lib/typed-legacy-export.py bin/proxy-agent-api bin/proxy-agent-reconcile
       - name: Typed config smoke
         run: bash tests/typed-config-smoke.sh
       - name: Legacy to typed config smoke
@@ -43,6 +43,8 @@ jobs:
         run: bash tests/control-api-smoke.sh
       - name: Revision store smoke
         run: bash tests/revision-store-smoke.sh
+      - name: Reconciler smoke
+        run: bash tests/reconciler-smoke.sh
       - name: Backend contract smoke
         run: bash tests/backend-contract-smoke.sh
       - name: HTTP CONNECT smoke
@@ -87,9 +89,10 @@ jobs:
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl config export-typed >/tmp/proxy-agent/typed.json
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl health-history --limit 1
           python3 - <<'PY'
+          import os
           import subprocess
           import sys
-          env = {"PA_CONFIG": "/tmp/proxy-agent/proxy-agent.conf", **__import__("os").environ}
+          env = dict(os.environ, PA_CONFIG="/tmp/proxy-agent/proxy-agent.conf")
           rc = subprocess.run(["bash", "bin/proxy-ctl", "doctor"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
           if rc == 0:
               print("doctor unexpectedly passed", file=sys.stderr)
