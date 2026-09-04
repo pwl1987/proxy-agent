@@ -14,6 +14,57 @@ state_marker() {
   printf '%s/%s' "$(state_dir)" "$name"
 }
 
+state_lock_dir() {
+  printf '%s/.state.lock' "$(state_dir)"
+}
+
+state_proc_starttime() {
+  local pid="$1"
+  [[ -r "/proc/$pid/stat" ]] || return 1
+  awk '{print $22}' "/proc/$pid/stat"
+}
+
+state_lock_is_stale() {
+  local lock_dir holder_pid holder_start created now current_start
+  lock_dir="$(state_lock_dir)"
+  [[ -d "$lock_dir" ]] || return 1
+  holder_pid="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+  holder_start="$(cat "$lock_dir/starttime" 2>/dev/null || true)"
+  created="$(cat "$lock_dir/created" 2>/dev/null || true)"
+  now="$(date +%s)"
+  if [[ -z "$holder_pid" || -z "$holder_start" ]]; then
+    [[ "$created" =~ ^[0-9]+$ ]] && (( now - created > 30 ))
+    return
+  fi
+  [[ "$holder_pid" =~ ^[0-9]+$ ]] || return 0
+  if ! current_start="$(state_proc_starttime "$holder_pid" 2>/dev/null)"; then return 0; fi
+  [[ "$current_start" != "$holder_start" ]]
+}
+
+state_lock_acquire() {
+  mkdir -p "$(state_dir)"
+  local lock_dir="$(state_lock_dir)" now
+  for _ in {1..100}; do
+    if mkdir "$lock_dir" 2>/dev/null; then
+      now="$(date +%s)"
+      printf '%s\n' "$$" >"$lock_dir/pid"
+      printf '%s\n' "$(state_proc_starttime "$$" 2>/dev/null || printf 0)" >"$lock_dir/starttime"
+      printf '%s\n' "$now" >"$lock_dir/created"
+      return 0
+    fi
+    if state_lock_is_stale; then
+      rm -rf "$lock_dir"
+      continue
+    fi
+    sleep 0.05
+  done
+  die "runtime state is locked: $lock_dir"
+}
+
+state_lock_release() {
+  rm -rf "$(state_lock_dir)"
+}
+
 state_epoch() {
   local name="$1" value
   if [[ -r "$(state_marker "$name")" ]]; then
@@ -26,11 +77,15 @@ state_epoch() {
 state_set_marker() {
   local name="$1" value="${2:-$(date +%s)}"
   mkdir -p "$(state_dir)"
+  state_lock_acquire
   printf '%s\n' "$value" >"$(state_marker "$name")"
+  state_lock_release
 }
 
 state_clear_marker() {
+  state_lock_acquire
   rm -f "$(state_marker "$1")"
+  state_lock_release
 }
 
 state_json_quote() {
@@ -60,13 +115,13 @@ state_sync() {
     if adapter_privoxy_status >/dev/null 2>&1; then adapter_state='ready'; else adapter_state='stopped'; fi
   fi
 
+  state_lock_acquire
   started_at="$(state_epoch started_at)"
   last_transition="$(state_epoch last_transition)"
   last_healthy="$(state_epoch healthy)"
   last_unhealthy="$(state_epoch unhealthy)"
   last_recovered="$(state_epoch recovered)"
 
-  mkdir -p "$(state_dir)"
   local tmp
   tmp="$(mktemp "$(state_dir)/runtime.json.XXXXXX")"
   printf '{"schema_version":2,"profile":%s,"backend":{"name":%s,"status":%s,"endpoint":%s,"managed":%s,"pid":%s,"identity":%s},"adapter":{"type":%s,"enabled":%s,"status":%s},"health":{"last_healthy":%s,"last_unhealthy":%s,"last_recovered":%s},"lifecycle":{"started_at":%s,"last_transition":%s}}\n' \
@@ -76,6 +131,7 @@ state_sync() {
     "$(state_json_quote "$adapter_type")" "${HTTP_ENABLED:-false}" "$(state_json_quote "$adapter_state")" \
     "$last_healthy" "$last_unhealthy" "$last_recovered" "$started_at" "$last_transition" >"$tmp"
   mv -f "$tmp" "$(state_file)"
+  state_lock_release
 }
 
 state_mark_started() {
