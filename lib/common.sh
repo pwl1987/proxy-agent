@@ -118,3 +118,11 @@ port_listening() {
   command -v ss >/dev/null 2>&1 || return 1
   ss -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "(^|:)${1}$"
 }
+
+listener_owned() {
+  local bind="$1" port="$2" pid="$3" endpoint
+  command -v ss >/dev/null 2>&1 || return 1
+  endpoint="${bind}:${port}"
+  ss -H -ltnp 2>/dev/null |
+    awk -v endpoint="$endpoint" -v pid="$pid" '$4 == endpoint && index($0, "pid=" pid ",") { found=1 } END { exit found ? 0 : 1 }'
+}
