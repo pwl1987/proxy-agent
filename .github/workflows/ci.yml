@@ -83,7 +83,7 @@ jobs:
           chown -R runner:runner "$ROOTLESS_HOME"
           sudo -u runner env HOME="$ROOTLESS_HOME" XDG_CONFIG_HOME="$ROOTLESS_HOME/.config" XDG_RUNTIME_DIR="$ROOTLESS_HOME/runtime" \
             BIN="$ROOTLESS_HOME/bin" PREFIX="$ROOTLESS_HOME/lib/proxy-agent" \
-            bash -c 'cd "$GITHUB_WORKSPACE" && ./install-user.sh'
+            bash "$GITHUB_WORKSPACE/install-user.sh"
           test -f "$ROOTLESS_HOME/.config/proxy-agent/proxy-agent.conf"
           test -x "$ROOTLESS_HOME/bin/proxy-ctl"
           grep -q "^ExecStart=$ROOTLESS_HOME/bin/proxy-ctl run$" "$ROOTLESS_HOME/.config/systemd/user/proxy-agent.service"
