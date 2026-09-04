@@ -235,7 +235,7 @@ cmd_exec() {
   fi
 
   (
-    unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy NO_PROXY no_proxy
+    unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy NO_PROXY no_proxy_value
     if [[ -n "$http_proxy_value" ]]; then
       export HTTP_PROXY="$http_proxy_value" HTTPS_PROXY="$https_proxy_value"
       export http_proxy="$http_proxy_value" https_proxy="$https_proxy_value"
