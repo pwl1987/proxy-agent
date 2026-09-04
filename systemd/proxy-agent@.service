@@ -8,6 +8,14 @@ Type=simple
 User=@SERVICE_USER@
 Group=@SERVICE_GROUP@
 UMask=0077
+RuntimeDirectory=proxy-agent
+LogsDirectory=proxy-agent
+Environment=PA_PROFILE=%i
+Environment=PA_STATE_DIR=/run/proxy-agent/%i
+Environment=PA_LOG_DIR=/var/log/proxy-agent/%i
+Environment=PA_CONFIG=/run/proxy-agent/%i/runtime/proxy-agent.conf
+Environment=PA_BOOTSTRAP_CONFIG=/etc/proxy-agent/profiles/%i.conf
+ExecStartPre=/bin/bash @PREFIX@/bin/proxy-agent-reconcile --bootstrap
 ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl --profile %i run
 ExecStop=/bin/bash @PREFIX@/bin/proxy-ctl --profile %i stop
 ExecReload=/bin/bash @PREFIX@/bin/proxy-ctl --profile %i restart
@@ -15,10 +23,6 @@ Restart=on-failure
 RestartSec=3
 KillMode=control-group
 TimeoutStopSec=10
-RuntimeDirectory=proxy-agent
-LogsDirectory=proxy-agent
-Environment=PA_STATE_DIR=/run/proxy-agent
-Environment=PA_LOG_DIR=/var/log/proxy-agent
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
