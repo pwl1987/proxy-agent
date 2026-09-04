@@ -233,9 +233,16 @@ cmd_exec() {
   fi
 
   local -a env_args=()
-  [[ -n "$http_proxy_value" ]] && env_args+=("HTTP_PROXY=$http_proxy_value" "http_proxy=$http_proxy_value")
-  [[ -n "$https_proxy_value" ]] && env_args+=("HTTPS_PROXY=$https_proxy_value" "https_proxy=$https_proxy_value")
-  [[ -n "$all_proxy_value" ]] && env_args+=("ALL_PROXY=$all_proxy_value" "all_proxy=$all_proxy_value")
+  if [[ -n "$http_proxy_value" ]]; then
+    env_args+=("HTTP_PROXY=$http_proxy_value" "http_proxy=$http_proxy_value")
+  else
+    env_args+=(-u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy)
+  fi
+  if [[ -n "$all_proxy_value" ]]; then
+    env_args+=("ALL_PROXY=$all_proxy_value" "all_proxy=$all_proxy_value")
+  else
+    env_args+=(-u ALL_PROXY -u all_proxy)
+  fi
   env_args+=("NO_PROXY=$no_proxy" "no_proxy=$no_proxy")
   env "${env_args[@]}" "$@"
 }
