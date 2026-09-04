@@ -1,0 +1,9 @@
+.git
+.github
+profiles
+systemd
+systemd-user
+*.log
+*.tmp
+*.swp
+.DS_Store
