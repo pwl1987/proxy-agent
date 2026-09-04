@@ -23,6 +23,9 @@ backend_load() {
   declare -F "${prefix}_stop" >/dev/null || die "backend '$name' missing stop contract"
   declare -F "${prefix}_status" >/dev/null || die "backend '$name' missing status contract"
   declare -F "${prefix}_endpoint" >/dev/null || die "backend '$name' missing endpoint contract"
+  declare -F "${prefix}_managed" >/dev/null || die "backend '$name' missing managed contract"
+  declare -F "${prefix}_pid" >/dev/null || die "backend '$name' missing pid contract"
+  declare -F "${prefix}_process_identity" >/dev/null || die "backend '$name' missing process identity contract"
 }
 
 backend_validate() { "$(backend_function_prefix "$BACKEND")_validate"; }
@@ -30,3 +33,6 @@ backend_start() { "$(backend_function_prefix "$BACKEND")_start"; }
 backend_stop() { "$(backend_function_prefix "$BACKEND")_stop"; }
 backend_status() { "$(backend_function_prefix "$BACKEND")_status"; }
 backend_endpoint() { "$(backend_function_prefix "$BACKEND")_endpoint"; }
+backend_managed() { "$(backend_function_prefix "$BACKEND")_managed"; }
+backend_pid() { "$(backend_function_prefix "$BACKEND")_pid"; }
+backend_process_identity() { "$(backend_function_prefix "$BACKEND")_process_identity"; }
