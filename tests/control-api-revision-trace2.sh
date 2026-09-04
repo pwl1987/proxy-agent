@@ -6,19 +6,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"
 SOCKET="$TMP/control.sock"
 CONFIG="$TMP/proxy-agent.conf"
-LOCAL_PROXY_PORT="$(python3 - <<'PY'
-import socket
-s=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-s.bind(('127.0.0.1',0))
-print(s.getsockname()[1])
-s.close()
-PY
-)"
-trap '[[ -z "${PID:-}" ]] || kill "$PID" >/dev/null 2>&1 || true; [[ -z "${WATCH_PID:-}" ]] || kill "$WATCH_PID" >/dev/null 2>&1 || true; wait "$WATCH_PID" >/dev/null 2>&1 || true; rm -rf "$TMP"' EXIT
+trap '[[ -z "${PID:-}" ]] || kill "$PID" >/dev/null 2>&1 || true; rm -rf "$TMP"' EXIT
 
-cat >"$CONFIG" <<EOF
+cat >"$CONFIG" <<'EOF'
 BACKEND="local-endpoint"
-LOCAL_PROXY_URL="http://127.0.0.1:${LOCAL_PROXY_PORT}"
+LOCAL_PROXY_URL="http://127.0.0.1:3128"
 LOCAL_PROXY_STATUS_TARGET="https://example.com"
 SOCKS_BIND="127.0.0.1"
 SOCKS_PORT="1080"
@@ -44,33 +36,33 @@ EOF
 chmod 0600 "$CONFIG"
 mkdir -p "$TMP/state"
 
-inotifywait -m -r -e create,open,close_write,moved_to,delete --format '%T|%e|%w%f' --timefmt '%s.%N' "$TMP/state" >"$TMP/inotify.log" 2>"$TMP/inotify.err" &
-WATCH_PID=$!
-
 PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" env -i PATH="$PATH" HOME="$HOME" PA_CONFIG="$CONFIG" PA_API_SOCKET="$SOCKET" PA_STATE_DIR="$TMP/state" PA_LOG_DIR="$TMP/log" /usr/bin/python3 "$ROOT/bin/proxy-agent-api" --socket "$SOCKET" >"$TMP/api.out" 2>"$TMP/api.err" &
 PID=$!
 for _ in {1..100}; do [[ -S "$SOCKET" ]] && break; sleep 0.05; done
-printf '%s\n' "=== probe port: $LOCAL_PROXY_PORT ==="
-ss -ltn 2>/dev/null | grep -E "[:.]${LOCAL_PROXY_PORT}([[:space:]]|$)" || true
-printf '%s\n' '=== preflight before revision_current ==='
-find "$TMP/state" -maxdepth 3 -print | sort
-printf '%s\n' '=== initialize revision store exactly like control-api-smoke ==='
-PA_STATE_DIR="$TMP/state" bash -c 'source "$1"; printf "current=%s desired=%s\n" "$(revision_current)" "$(revision_desired_revision)"' _ "$ROOT/lib/revision-store.sh"
-printf '%s\n' '=== state after revision_current ==='
-find "$TMP/state" -maxdepth 3 -print | sort
-for f in "$TMP/state"/revisions/*; do [[ -f "$f" ]] || continue; printf '%s\n' "--- $f ---"; cat "$f"; done
-printf '%s\n' '=== health request ==='
-curl --silent --show-error --unix-socket "$SOCKET" -D "$TMP/headers" http://localhost/api/v1/health >"$TMP/health.json" 2>&1 || true
-cat "$TMP/headers" 2>/dev/null || true
-cat "$TMP/health.json" 2>/dev/null || true
-sleep 0.2
-printf '%s\n' '=== state after health ==='
-find "$TMP/state" -maxdepth 3 -type f -printf '%P\n' 2>/dev/null | sort
-for f in "$TMP/state"/revisions/* "$TMP/state"/runtime/*; do [[ -f "$f" ]] || continue; printf '%s\n' "--- $f ---"; cat "$f"; done
-printf '%s\n' '=== events ==='
-cat "$TMP/inotify.log" 2>/dev/null || true
-printf '%s\n' '=== api stderr ==='
-cat "$TMP/api.err" 2>/dev/null || true
-printf '%s\n' '=== processes ==='
+[[ -S "$SOCKET" ]]
+
+PA_STATE_DIR="$TMP/state" bash -c 'source "$1"; printf "initial current=%s desired=%s\n" "$(revision_current)" "$(revision_desired_revision)"' _ "$ROOT/lib/revision-store.sh"
+
+call() {
+  local name="$1" path="$2"
+  printf '%s\n' "=== $name ==="
+  curl --silent --show-error --fail --unix-socket "$SOCKET" "http://localhost$path" >"$TMP/$name.json"
+  cat "$TMP/$name.json"
+  printf '%s\n' '--- revisions ---'
+  find "$TMP/state/revisions" -maxdepth 1 -type f -printf '%f\n' 2>/dev/null | sort
+  for f in "$TMP/state/revisions"/*; do [[ -f "$f" ]] || continue; printf '%s: ' "$(basename "$f")"; cat "$f"; done
+  printf '\n'
+}
+
+call health /api/v1/health
+call status /api/v1/status
+call capabilities /api/v1/capabilities
+call config /api/v1/config
+call revisions /api/v1/revisions
+call metrics /api/v1/metrics
+
+printf '%s\n' '=== API STDERR ==='
+cat "$TMP/api.err"
+printf '%s\n' '=== PROCESSES ==='
 ps -eo pid,ppid,args | grep -E 'proxy-agent-api|proxy-agent-reconcile|proxy-ctl' | grep -v grep || true
 exit 0
