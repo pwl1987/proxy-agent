@@ -41,6 +41,8 @@ jobs:
         run: bash tests/backend-capability-manifest-smoke.sh
       - name: Profile context smoke
         run: bash tests/profile-context-smoke.sh
+      - name: Route matcher smoke
+        run: bash tests/route-matcher-smoke.sh
       - name: Control plane schema smoke
         run: bash tests/control-plane-schema-smoke.sh
       - name: Control API smoke
