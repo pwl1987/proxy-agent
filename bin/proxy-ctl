@@ -252,6 +252,7 @@ cmd_tui() { exec "$ROOT/bin/proxy-agent-tui"; }
 cmd_profiles() { exec "$ROOT/bin/proxy-agent-profile" "${1:-list}" "${2:-}"; }
 cmd_capabilities() { backend_capabilities; }
 cmd_history() { exec "$ROOT/bin/proxy-agent-health-history" "${@}"; }
+cmd_agent() { exec "$ROOT/bin/proxy-agent-agent" "$@"; }
 cmd_config() {
   case "${1:-}" in
     export-typed)
@@ -319,6 +320,8 @@ usage() {
   config export-typed         将已验证的旧版 .conf 导出为 typed JSON
   health-history [--limit N] [--json]
                               查看健康检查历史
+  agent <install|status|env> [选项]
+                              管理 AI/自动化 Agent 网络环境
   tui                         打开交互式终端控制台
 
 说明：--json 输出保持稳定的英文 schema；其他人类可读输出默认使用中文。
@@ -342,6 +345,7 @@ case "${1:-}" in
   capabilities) cmd_capabilities ;;
   config) shift; cmd_config "${1:-}" ;;
   health-history) shift; cmd_history "${@}" ;;
+  agent) shift; cmd_agent "$@" ;;
   tui) cmd_tui ;;
   *) usage; exit 2 ;;
 esac
