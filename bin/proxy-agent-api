@@ -9,6 +9,7 @@ import socketserver
 import stat
 import subprocess
 import sys
+import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
@@ -17,6 +18,7 @@ from typing import Any
 API_VERSION = "v1"
 ROOT = Path(__file__).resolve().parent.parent
 PROXY_CTL = ROOT / "bin" / "proxy-ctl"
+RECONCILER = ROOT / "bin" / "proxy-agent-reconcile"
 REVISION_STORE = ROOT / "lib" / "revision-store.sh"
 AUDIT_STORE = ROOT / "lib" / "audit-store.sh"
 MAX_BODY = 1024 * 1024
@@ -46,13 +48,6 @@ def command_json(*args: str) -> Any:
     return json.loads(stdout.decode("utf-8"))
 
 
-def revision_shell(function: str, *args: str) -> tuple[int, bytes, bytes]:
-    env = os.environ.copy()
-    store = str(REVISION_STORE)
-    quoted = ["bash", "-c", f'source "$1"; {function} "$@"', "_", store, *args]
-    return subprocess.run(quoted, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False).returncode, b"", b""
-
-
 def revision_call(function: str, *args: str) -> bytes:
     env = os.environ.copy()
     cmd = ["bash", "-c", 'source "$1"; shift; "$FUNC" "$@"', "_", str(REVISION_STORE), *args]
@@ -64,12 +59,22 @@ def revision_call(function: str, *args: str) -> bytes:
 
 
 def audit_call(event: dict[str, Any]) -> None:
-    env = os.environ.copy()
     text = json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     cmd = ["bash", "-c", 'source "$1"; audit_append "$2"', "_", str(AUDIT_STORE), text]
-    p = subprocess.run(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    p = subprocess.run(cmd, cwd=ROOT, env=os.environ.copy(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     if p.returncode != 0:
         raise RuntimeError(p.stderr.decode("utf-8", errors="replace").strip() or "audit append failed")
+
+
+def reconcile() -> dict[str, Any]:
+    p = subprocess.run([str(RECONCILER)], cwd=ROOT, env=os.environ.copy(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    if p.returncode != 0:
+        raise RuntimeError(p.stderr.decode("utf-8", errors="replace").strip() or "reconcile failed")
+    return json.loads(p.stdout.decode("utf-8"))
+
+
+class ConflictError(Exception):
+    pass
 
 
 class ControlRequestHandler(BaseHTTPRequestHandler):
@@ -202,21 +207,24 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         actor = str(body.get("actor") or "local-api")
         summary = str(body.get("change_summary") or "configuration change")
         rid = int(revision_call("revision_record", cfg, actor, summary, "passed", "pending"))
-        audit_call({"schema_version": 1, "event": "revision.created", "revision": rid, "actor": actor, "timestamp": __import__('time').time_ns() // 1_000_000_000, "change_summary": summary})
+        audit_call({"schema_version": 1, "event": "revision.created", "revision": rid, "actor": actor, "timestamp": int(time.time()), "change_summary": summary})
         self._send(HTTPStatus.CREATED, response_envelope("revision", json.loads(revision_call("revision_get", str(rid)))))
 
     def _apply(self, body: Any) -> None:
         revision = int(body.get("revision", 0)) if isinstance(body, dict) else 0
         expected = body.get("if_match_revision") if isinstance(body, dict) else None
         current = int(revision_call("revision_current"))
+        if revision <= 0:
+            raise ValueError("revision is required")
         if expected is not None and int(expected) != current:
             raise ConflictError(f"expected revision {expected}, current revision is {current}")
         raw = revision_call("revision_get", str(revision))
         obj = json.loads(raw)
-        revision_call("revision_set_desired", str(revision), obj["config"] and json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+        revision_call("revision_set_desired", str(revision), json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+        result = reconcile()
         actor = str(body.get("actor") or "local-api")
-        audit_call({"schema_version": 1, "event": "desired_state.updated", "revision": revision, "actor": actor, "timestamp": __import__('time').time_ns() // 1_000_000_000})
-        self._send(HTTPStatus.ACCEPTED, response_envelope("apply", {"revision": revision, "desired_revision": int(revision_call("revision_desired_revision")), "runtime": "pending_reconcile"}))
+        audit_call({"schema_version": 1, "event": "desired_state.reconciled", "revision": revision, "actor": actor, "timestamp": int(time.time()), "status": result.get("status")})
+        self._send(HTTPStatus.ACCEPTED, response_envelope("apply", {"revision": revision, "desired_revision": int(revision_call("revision_desired_revision")), "reconcile": result}))
 
     def _rollback(self, body: Any) -> None:
         if not isinstance(body, dict) or not body.get("revision"):
@@ -232,12 +240,9 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         summary = f"rollback to revision {target}"
         rid = int(revision_call("revision_record", json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True), actor, summary, "passed", "pending"))
         revision_call("revision_set_desired", str(rid), json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True))
-        audit_call({"schema_version": 1, "event": "rollback.requested", "revision": rid, "target_revision": target, "actor": actor, "timestamp": __import__('time').time_ns() // 1_000_000_000})
-        self._send(HTTPStatus.ACCEPTED, response_envelope("rollback", {"revision": rid, "target_revision": target, "desired_revision": int(revision_call("revision_desired_revision")), "runtime": "pending_reconcile"}))
-
-
-class ConflictError(Exception):
-    pass
+        result = reconcile()
+        audit_call({"schema_version": 1, "event": "rollback.reconciled", "revision": rid, "target_revision": target, "actor": actor, "timestamp": int(time.time()), "status": result.get("status")})
+        self._send(HTTPStatus.ACCEPTED, response_envelope("rollback", {"revision": rid, "target_revision": target, "desired_revision": int(revision_call("revision_desired_revision")), "reconcile": result}))
 
 
 class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
