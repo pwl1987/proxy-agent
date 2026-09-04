@@ -132,10 +132,14 @@ assert any(e.get("event") == "desired_state.activated" and e.get("revision") == 
 PY
 
 conflict_status="$(curl --silent --show-error --unix-socket "$SOCKET" -o "$TMP/conflict.json" -w '%{http_code}' -H 'Content-Type: application/json' -X POST --data '{"revision":1,"if_match_revision":0}' http://localhost/api/v1/apply)"
+echo "--- conflict status: $conflict_status ---"
+cat "$TMP/conflict.json"
 [[ "$conflict_status" == "409" ]]
 grep -q 'revision_conflict' "$TMP/conflict.json"
 
 rollback_status="$(curl --silent --show-error --unix-socket "$SOCKET" -o "$TMP/rollback.json" -w '%{http_code}' -H 'Content-Type: application/json' -X POST --data '{"revision":1,"if_match_revision":1,"actor":"smoke"}' http://localhost/api/v1/rollback)"
+echo "--- rollback status: $rollback_status ---"
+cat "$TMP/rollback.json"
 [[ "$rollback_status" == "202" ]]
 python3 - "$TMP/rollback.json" <<'PY'
 import json, sys
