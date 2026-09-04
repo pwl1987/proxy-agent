@@ -45,6 +45,8 @@ jobs:
         run: bash tests/revision-store-smoke.sh
       - name: Reconciler smoke
         run: bash tests/reconciler-smoke.sh
+      - name: CLI exec smoke
+        run: bash tests/cli-exec-smoke.sh
       - name: Backend contract smoke
         run: bash tests/backend-contract-smoke.sh
       - name: HTTP CONNECT smoke
