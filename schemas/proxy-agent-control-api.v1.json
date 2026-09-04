@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/pwl1987/proxy-agent/schema/proxy-agent-control-api.v1.json",
+  "title": "proxy-agent local Control API v1 contract",
+  "description": "Stable machine contract for the local proxy-agent control plane. Human-facing CLI/TUI text remains outside this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["api_version", "transport", "endpoints"],
+  "properties": {
+    "api_version": {"type": "string", "const": "v1"},
+    "transport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "default"],
+      "properties": {
+        "kind": {"type": "string", "const": "http"},
+        "default": {"type": "string", "enum": ["unix", "loopback"]},
+        "remote": {"type": "boolean", "const": false}
+      }
+    },
+    "endpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["method", "path", "kind", "mutating"],
+        "properties": {
+          "method": {"type": "string", "enum": ["GET", "POST"]},
+          "path": {"type": "string", "pattern": "^/api/v1/[A-Za-z0-9._/-]+$"},
+          "kind": {"type": "string", "enum": ["status", "health", "metrics", "capabilities", "config", "events", "validate", "revision", "apply", "rollback"]},
+          "mutating": {"type": "boolean"},
+          "concurrency": {"type": "string", "enum": ["none", "if_match_revision"]}
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "api_version": "v1",
+      "transport": {"kind": "http", "default": "unix", "remote": false},
+      "endpoints": [
+        {"method": "GET", "path": "/api/v1/status", "kind": "status", "mutating": false},
+        {"method": "GET", "path": "/api/v1/health", "kind": "health", "mutating": false},
+        {"method": "GET", "path": "/api/v1/metrics", "kind": "metrics", "mutating": false},
+        {"method": "GET", "path": "/api/v1/capabilities", "kind": "capabilities", "mutating": false},
+        {"method": "GET", "path": "/api/v1/config", "kind": "config", "mutating": false},
+        {"method": "GET", "path": "/api/v1/events", "kind": "events", "mutating": false},
+        {"method": "POST", "path": "/api/v1/validate", "kind": "validate", "mutating": false},
+        {"method": "POST", "path": "/api/v1/revisions", "kind": "revision", "mutating": true, "concurrency": "if_match_revision"},
+        {"method": "POST", "path": "/api/v1/apply", "kind": "apply", "mutating": true, "concurrency": "if_match_revision"},
+        {"method": "POST", "path": "/api/v1/rollback", "kind": "rollback", "mutating": true, "concurrency": "if_match_revision"}
+      ]
+    }
+  ]
+}
