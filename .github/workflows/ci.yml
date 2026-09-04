@@ -30,7 +30,7 @@ jobs:
           bash -n install-user.sh
           bash -n upgrade.sh
           bash -n upgrade-user.sh
-          python3 -m py_compile lib/legacy-typed-export.py
+          python3 -m py_compile lib/legacy-typed-export.py lib/legacy-typed-export.py bin/proxy-agent-api
       - name: Typed config smoke
         run: bash tests/typed-config-smoke.sh
       - name: Legacy to typed config smoke
@@ -39,6 +39,8 @@ jobs:
         run: bash tests/typed-config-cli-smoke.sh
       - name: Backend capability manifest smoke
         run: bash tests/backend-capability-manifest-smoke.sh
+      - name: Control API smoke
+        run: bash tests/control-api-smoke.sh
       - name: Backend contract smoke
         run: bash tests/backend-contract-smoke.sh
       - name: HTTP CONNECT smoke
