@@ -5,6 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=@SERVICE_USER@
+Group=@SERVICE_GROUP@
+UMask=0077
 ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl run
 ExecStop=/bin/bash @PREFIX@/bin/proxy-ctl stop
 ExecReload=/bin/bash @PREFIX@/bin/proxy-ctl restart
@@ -12,6 +15,19 @@ Restart=on-failure
 RestartSec=3
 KillMode=control-group
 TimeoutStopSec=10
+RuntimeDirectory=proxy-agent
+LogsDirectory=proxy-agent
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
 
 [Install]
 WantedBy=multi-user.target

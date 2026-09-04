@@ -26,9 +26,11 @@ INTEGRATE_DOCKER="false"
 INTEGRATE_PIP="false"
 INTEGRATE_NPM="false"
 EOF
+chmod 0600 "$TMP/config"
 
 mkdir -p "$TMP/profiles"
 sed 's/REMOTE_HOST="proxy.example.com"/REMOTE_HOST="profile.example"/' "$TMP/config" >"$TMP/profiles/work.conf"
+chmod 0600 "$TMP/profiles/work.conf"
 
 cat >"$TMP/local.conf" <<'EOF'
 BACKEND="local-endpoint"
@@ -38,6 +40,7 @@ HTTP_ENABLED="false"
 DIRECT_CIDRS="127.0.0.0/8"
 DIRECT_DOMAINS="localhost"
 EOF
+chmod 0600 "$TMP/local.conf"
 
 cat >"$TMP/bad-local.conf" <<'EOF'
 BACKEND="local-endpoint"
@@ -47,10 +50,15 @@ HTTP_PORT="70000"
 HEALTH_TIMEOUT="0"
 ROUTE_RULES=$'x|DIRECT|suffix|internal.example\n20|NOPE|exact|example.com'
 EOF
+chmod 0600 "$TMP/bad-local.conf"
+
+cp "$TMP/local.conf" "$TMP/world-readable.conf"
+chmod 0644 "$TMP/world-readable.conf"
 
 run() { PA_CONFIG="$TMP/config" PA_STATE_DIR="$TMP/state" bash "$ROOT/bin/proxy-ctl" "$@"; }
 run_local() { PA_CONFIG="$TMP/local.conf" PA_STATE_DIR="$TMP/local-state" bash "$ROOT/bin/proxy-ctl" "$@"; }
 run_bad() { PA_CONFIG="$TMP/bad-local.conf" PA_STATE_DIR="$TMP/bad-state" bash "$ROOT/bin/proxy-ctl" "$@"; }
+run_insecure() { PA_CONFIG="$TMP/world-readable.conf" PA_STATE_DIR="$TMP/insecure-state" bash "$ROOT/bin/proxy-ctl" "$@"; }
 run_profile() { PA_PROFILE_DIR="$TMP/profiles" bash "$ROOT/bin/proxy-ctl" --profile work "$@"; }
 run_integration() { PA_CONFIG="$TMP/config" bash "$ROOT/bin/proxy-agent-integration" "$@"; }
 run_profile_inspect() { PA_PROFILE_DIR="$TMP/profiles" bash "$ROOT/bin/proxy-agent-profile" "$@"; }
@@ -63,7 +71,6 @@ for file in \
   bash -n "$file"
 done
 
-# The routing library must be usable independently of proxy-ctl.
 source "$ROOT/lib/common.sh"
 source "$ROOT/lib/route.sh"
 [[ "$(route_explain 'API.Example.Net')" == PROXY* ]]
@@ -88,6 +95,7 @@ valid_ipv4_cidr "192.168.0.0/16"
 [[ "$(run status --json | grep -c '"endpoint":"socks5h://127.0.0.1:1080"')" -eq 1 ]]
 [[ "$(run_local validate | grep -c '^configuration valid:')" -eq 1 ]]
 ! run_bad validate >/dev/null 2>&1
+! run_insecure validate >/dev/null 2>&1
 [[ "$(run_local status --json | grep -c '"backend":"local-endpoint"')" -eq 1 ]]
 [[ "$(run_local status --json=v2 | grep -c '"schema_version":2')" -eq 1 ]]
 [[ "$(run_local status --json=v2 | grep -c '"managed":false')" -eq 1 ]]
@@ -101,11 +109,15 @@ valid_ipv4_cidr "192.168.0.0/16"
 [[ "$(run_integration git | grep -c 'git config --global http.proxy')" -eq 1 ]]
 [[ "$(run_integration docker 2>/dev/null)" == *disabled* ]] || true
 [[ "$(grep -c '^Type=simple$' "$ROOT/systemd/proxy-agent.service")" -eq 1 ]]
-[[ "$(grep -c '^ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl run$' "$ROOT/systemd/proxy-agent.service")" -eq 1 ]]
-[[ "$(grep -c '^Type=simple$' "$ROOT/systemd/proxy-agent@.service")" -eq 1 ]]
-[[ "$(grep -c '^ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl --profile %i run$' "$ROOT/systemd/proxy-agent@.service")" -eq 1 ]]
-! grep -q 'PA_FOREGROUND' "$ROOT/systemd/proxy-agent.service"
-! grep -q 'PA_FOREGROUND' "$ROOT/systemd/proxy-agent@.service"
+[[ "$(grep -c '^User=@SERVICE_USER@$' "$ROOT/systemd/proxy-agent.service")" -eq 1 ]]
+[[ "$(grep -c '^Group=@SERVICE_GROUP@$' "$ROOT/systemd/proxy-agent.service")" -eq 1 ]]
+[[ "$(grep -c '^ProtectSystem=strict$' "$ROOT/systemd/proxy-agent.service")" -eq 1 ]]
+[[ "$(grep -c '^ProtectHome=read-only$' "$ROOT/systemd/proxy-agent.service")" -eq 1 ]]
+[[ "$(grep -c '^NoNewPrivileges=true$' "$ROOT/systemd/proxy-agent.service")" -eq 1 ]]
+[[ "$(grep -c '^User=@SERVICE_USER@$' "$ROOT/systemd/proxy-agent@.service")" -eq 1 ]]
+[[ "$(grep -c '^User=@SERVICE_USER@$' "$ROOT/systemd/proxy-agent-health.service")" -eq 1 ]]
+[[ "$(grep -c '^User=@SERVICE_USER@$' "$ROOT/systemd/proxy-agent-health@.service")" -eq 1 ]]
+[[ "$(grep -c '^Requires=proxy-agent@%i.service$' "$ROOT/systemd/proxy-agent-health@.service")" -eq 1 ]]
 ! run doctor
 
 echo 'PASS smoke tests'

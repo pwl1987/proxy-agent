@@ -25,6 +25,7 @@ profile_load() {
   local name="$1" path
   path="$(profile_path "$name")"
   [[ -r "$path" ]] || die "profile not found: $name ($path)"
+  require_secure_config_file "$path"
   # shellcheck disable=SC1090
   source "$path"
   PA_ACTIVE_PROFILE="$name"

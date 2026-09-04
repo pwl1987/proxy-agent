@@ -21,12 +21,10 @@
 - Backend endpoint contract ✅
 - Ordered route policy and `route` explanation ✅
 - Machine-readable `status --json` schema v1 ✅
-- Foreground backend mode for systemd ownership ✅
-- systemd `Type=simple` + control-group lifecycle ✅
 - Per-profile systemd services and health timers ✅
 - Strict configuration validation and `proxy-ctl validate` ✅
 
-## V2 runtime hardening — completed gate
+## V2 runtime hardening — completed
 - Runtime state schema v2 via `status --json=v2` ✅
 - Health markers synchronized into runtime state ✅
 - Managed/unmanaged backend ownership contract ✅
@@ -35,11 +33,20 @@
 - Long-lived `proxy-ctl run` service-manager entrypoint ✅
 - systemd lifecycle no longer depends on foreground backend environment hacks ✅
 
-## V2 runtime hardening — next
-- Configuration ownership/mode validation for privileged deployments
-- Stronger process identity verification (UID, executable, listener binding)
-- Atomic state locking and stale-state cleanup
+## V2 deployment hardening — completed gate
+- Dedicated least-privilege systemd service account ✅
+- Root-owned/group-readable configuration with no group/other write access ✅
+- Profile permission checks before shell-source evaluation ✅
+- Runtime/log directories owned by the service account ✅
+- systemd `NoNewPrivileges`, `ProtectSystem`, `ProtectHome`, and kernel sandboxing ✅
+- Generated Privoxy configuration moved out of `/etc` into runtime state ✅
+
+## V2 deployment hardening — next
+- Rootless interactive installation/execution without requiring a system account
+- Atomic runtime-state locking and stale-state cleanup
+- Stronger process identity verification including executable/UID/listener binding
 - Separate backend liveness from active network health probes
+- Upgrade/migration checks for existing installations
 
 ## V2 backends
 1. SSH SOCKS5 ✅
@@ -55,8 +62,8 @@ Every managed backend implements the same semantic lifecycle contract:
 - Rootless Linux execution
 - Container image and host/container network documentation
 - Reproducible installation and upgrade path
-- Security hardening and least-privilege service account
-- Configuration ownership/mode verification for privileged deployments
+- Security hardening and least-privilege service account ✅
+- Configuration ownership/mode verification ✅
 
 ## V2 observability
 - Structured runtime state ✅

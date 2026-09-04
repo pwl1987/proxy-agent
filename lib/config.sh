@@ -104,10 +104,6 @@ config_validate_core() {
   esac
   [[ "${SOCKS_BIND:-}" != '0.0.0.0' && "${SOCKS_BIND:-}" != '::' ]] || config_error 'SOCKS_BIND must not expose the proxy by default; use loopback or make exposure an explicit deployment decision'
 
-  if [[ "${HTTP_ENABLED:-false}" == true ]]; then
-    [[ -n "${PRIVOXY_CONFIG:-}" ]] || config_error 'PRIVOXY_CONFIG is required when HTTP_ENABLED=true'
-  fi
-
   local cidr
   config_validate_list DIRECT_CIDRS "${DIRECT_CIDRS:-}"
   if [[ -n "${DIRECT_CIDRS:-}" ]]; then

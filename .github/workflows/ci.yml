@@ -33,6 +33,14 @@ jobs:
           grep -q '^ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl run$' systemd/proxy-agent.service
           grep -q '^Type=simple$' systemd/proxy-agent@.service
           grep -q '^ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl --profile %i run$' systemd/proxy-agent@.service
+          grep -q '^User=@SERVICE_USER@$' systemd/proxy-agent.service
+          grep -q '^Group=@SERVICE_GROUP@$' systemd/proxy-agent.service
+          grep -q '^User=@SERVICE_USER@$' systemd/proxy-agent@.service
+          grep -q '^User=@SERVICE_USER@$' systemd/proxy-agent-health.service
+          grep -q '^User=@SERVICE_USER@$' systemd/proxy-agent-health@.service
+          grep -q '^NoNewPrivileges=true$' systemd/proxy-agent.service
+          grep -q '^ProtectSystem=strict$' systemd/proxy-agent.service
+          grep -q '^ProtectHome=read-only$' systemd/proxy-agent.service
           grep -q '^Requires=proxy-agent@%i.service$' systemd/proxy-agent-health@.service
           grep -q '^ExecStart=.*proxy-agent-health --profile %i$' systemd/proxy-agent-health@.service
           grep -q '^Unit=proxy-agent-health@%i.service$' systemd/proxy-agent-health@.timer
@@ -44,6 +52,7 @@ jobs:
         run: |
           mkdir -p /tmp/proxy-agent
           cp proxy-agent.conf.example /tmp/proxy-agent/proxy-agent.conf
+          chmod 0600 /tmp/proxy-agent/proxy-agent.conf
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl diagnose
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl route example.com
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl route example.cn

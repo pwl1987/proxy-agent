@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+adapter_privoxy_config() {
+  printf '%s' "${PRIVOXY_CONFIG:-$PA_STATE_DIR/privoxy.conf}"
+}
+
 adapter_privoxy_validate() {
   require_cmd privoxy
   require_cmd curl
-  : "${PRIVOXY_CONFIG:?PRIVOXY_CONFIG is required when HTTP_ENABLED=true}"
 }
 
 adapter_privoxy_write_config() {
   mkdir -p "$PA_STATE_DIR" "$PA_LOG_DIR"
-  local cfg="${PRIVOXY_CONFIG}"
+  local cfg
+  cfg="$(adapter_privoxy_config)"
   install -d -m 0755 "$(dirname "$cfg")"
   cat >"$cfg" <<EOF
 confdir /etc/privoxy
@@ -31,7 +35,9 @@ adapter_privoxy_start() {
   if port_listening "$HTTP_PORT"; then
     return 0
   fi
-  privoxy --no-daemon "$PRIVOXY_CONFIG" >>"$PA_LOG_DIR/privoxy.log" 2>&1 &
+  local cfg
+  cfg="$(adapter_privoxy_config)"
+  privoxy --no-daemon "$cfg" >>"$PA_LOG_DIR/privoxy.log" 2>&1 &
   echo $! >"$PA_STATE_DIR/privoxy.pid"
   for _ in {1..20}; do
     port_listening "$HTTP_PORT" && return 0
