@@ -1,0 +1,1 @@
+This branch advances the control plane with tracked systemd ownership, valid machine-readable status output, and direct wiring of the ordered route engine. See LIFECYCLE.md and CONTROL-PLANE.md for the contracts.
