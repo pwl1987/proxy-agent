@@ -16,7 +16,7 @@ SOCKS_PORT="1080"
 HTTP_ENABLED="false"
 HTTP_BIND="127.0.0.1"
 HTTP_PORT="8118"
-DIRECT_CIDRS="127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+DIRECT_CIDRS="127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 DIRECT_DOMAINS="localhost,.local,.cn"
 NO_PROXY_EXTRA="internal.example"
 ROUTE_RULES=$'100|DIRECT|suffix|.internal.example\n200|PROXY|wildcard|*.example.net'
@@ -39,6 +39,7 @@ LOCAL_PROXY_STATUS_TARGET="https://example.com"
 HTTP_ENABLED="false"
 DIRECT_CIDRS="127.0.0.0/8"
 DIRECT_DOMAINS="localhost"
+HEALTH_NETWORK_REQUIRED="false"
 EOF
 chmod 0600 "$TMP/local.conf"
 
@@ -65,8 +66,8 @@ run_profile_inspect() { PA_PROFILE_DIR="$TMP/profiles" bash "$ROOT/bin/proxy-age
 
 for file in \
   "$ROOT/bin/proxy-ctl" "$ROOT/bin/proxy-agent-health" "$ROOT/bin/proxy-agent-integration" "$ROOT/bin/proxy-agent-profile" \
-  "$ROOT/bin/proxy-agent-tui" "$ROOT/install.sh" "$ROOT/adapters/privoxy.sh" "$ROOT/backends/ssh-socks.sh" "$ROOT/backends/local-endpoint.sh" \
-  "$ROOT/lib/common.sh" "$ROOT/lib/profile.sh" "$ROOT/lib/backend-capabilities.sh" "$ROOT/lib/backend.sh" "$ROOT/lib/route.sh" "$ROOT/lib/config.sh" "$ROOT/lib/state.sh" \
+  "$ROOT/bin/proxy-agent-tui" "$ROOT/install.sh" "$ROOT/install-user.sh" "$ROOT/adapters/privoxy.sh" "$ROOT/backends/ssh-socks.sh" "$ROOT/backends/local-endpoint.sh" "$ROOT/backends/sing-box.sh" \
+  "$ROOT/lib/common.sh" "$ROOT/lib/profile.sh" "$ROOT/lib/backend-capabilities.sh" "$ROOT/lib/backend.sh" "$ROOT/lib/route.sh" "$ROOT/lib/config.sh" "$ROOT/lib/state.sh" "$ROOT/lib/health.sh" \
   "$ROOT/integrations/common.sh" "$ROOT/integrations/git.sh" "$ROOT/integrations/docker.sh" "$ROOT/integrations/pip.sh" "$ROOT/integrations/npm.sh"; do
   bash -n "$file"
 done
@@ -74,6 +75,9 @@ done
 source "$ROOT/lib/common.sh"
 source "$ROOT/lib/route.sh"
 source "$ROOT/lib/state.sh"
+source "$ROOT/lib/health.sh"
+apply_config_defaults
+[[ "$HEALTH_NETWORK_REQUIRED" == false ]]
 [[ "$(route_explain 'API.Example.Net')" == PROXY* ]]
 valid_ipv4_cidr "10.0.0.0/8"
 valid_ipv4_cidr "172.16.0.0/12"
@@ -133,6 +137,31 @@ state_lock_release
 [[ "$(grep -c '^User=@SERVICE_USER@$' "$ROOT/systemd/proxy-agent-health.service")" -eq 1 ]]
 [[ "$(grep -c '^User=@SERVICE_USER@$' "$ROOT/systemd/proxy-agent-health@.service")" -eq 1 ]]
 [[ "$(grep -c '^Requires=proxy-agent@%i.service$' "$ROOT/systemd/proxy-agent-health@.service")" -eq 1 ]]
+[[ "$(grep -c '^Type=simple$' "$ROOT/systemd-user/proxy-agent.service")" -eq 1 ]]
+[[ "$(grep -c '^ExecStart=@BIN@/proxy-ctl run$' "$ROOT/systemd-user/proxy-agent.service")" -eq 1 ]]
+[[ "$(grep -c '^Environment=PA_STATE_DIR=%t/proxy-agent/run$' "$ROOT/systemd-user/proxy-agent.service")" -eq 1 ]]
+[[ "$(grep -c '^ProtectSystem=strict$' "$ROOT/systemd-user/proxy-agent.service")" -eq 1 ]]
+[[ "$(grep -c '^ExecStart=@BIN@/proxy-ctl --profile %i run$' "$ROOT/systemd-user/proxy-agent@.service")" -eq 1 ]]
+[[ "$(grep -c '^Environment=PA_STATE_DIR=%t/proxy-agent/run/%i$' "$ROOT/systemd-user/proxy-agent@.service")" -eq 1 ]]
+[[ "$(grep -c '^Requires=proxy-agent@%i.service$' "$ROOT/systemd-user/proxy-agent-health@.service")" -eq 1 ]]
+
+LINK_DIR="$TMP/bin"
+mkdir -p "$LINK_DIR"
+ln -s "$ROOT/bin/proxy-ctl" "$LINK_DIR/proxy-ctl"
+PA_CONFIG="$TMP/config" PA_STATE_DIR="$TMP/link-state" bash "$LINK_DIR/proxy-ctl" route example.cn >/dev/null
+
+ROOTLESS_HOME="$TMP/rootless-home"
+ROOTLESS_CONFIG="$ROOTLESS_HOME/.config/proxy-agent"
+ROOTLESS_PROFILE="$ROOTLESS_CONFIG/profiles"
+mkdir -p "$ROOTLESS_PROFILE"
+cp "$TMP/local.conf" "$ROOTLESS_CONFIG/proxy-agent.conf"
+chmod 0600 "$ROOTLESS_CONFIG/proxy-agent.conf"
+chown -R runner:runner "$ROOTLESS_HOME" 2>/dev/null || true
+if command -v sudo >/dev/null 2>&1 && id runner >/dev/null 2>&1; then
+  sudo -u runner env HOME="$ROOTLESS_HOME" XDG_CONFIG_HOME="$ROOTLESS_HOME/.config" XDG_RUNTIME_DIR="$TMP/rootless-runtime" \
+    bash "$ROOT/bin/proxy-ctl" validate >/dev/null
+fi
+
 ! run doctor
 
 echo 'PASS smoke tests'

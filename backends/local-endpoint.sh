@@ -37,10 +37,46 @@ backend_local_endpoint_stop() {
   :
 }
 
-backend_local_endpoint_status() {
+backend_local_endpoint_host_port() {
+  local endpoint="${LOCAL_PROXY_URL:-}" scheme authority host port
+  scheme="${endpoint%%://*}"
+  authority="${endpoint#*://}"
+  authority="${authority%%/*}"
+  if [[ "$authority" == \[*\]* ]]; then
+    host="${authority%%]*}]"
+    port="${authority#*]:}"
+    [[ "$port" == "$authority" ]] && port=""
+  else
+    host="${authority%%:*}"
+    port="${authority#*:}"
+    [[ "$port" == "$authority" ]] && port=""
+  fi
+  case "$scheme" in
+    http) port="${port:-80}" ;;
+    https) port="${port:-443}" ;;
+    socks5|socks5h) port="${port:-1080}" ;;
+  esac
+  printf '%s|%s' "$host" "$port"
+}
+
+backend_local_endpoint_liveness() {
   backend_local_endpoint_validate >/dev/null 2>&1 || return 1
-  local probe="${LOCAL_PROXY_STATUS_TARGET:-https://example.com}"
-  curl -fsS --proxy "$LOCAL_PROXY_URL" --connect-timeout "${HEALTH_TIMEOUT:-2}" --max-time "$((HEALTH_TIMEOUT + 3))" "$probe" >/dev/null
+  local hp host port
+  hp="$(backend_local_endpoint_host_port)"
+  host="${hp%%|*}"
+  port="${hp#*|}"
+  case "$host" in
+    127.0.0.1|localhost|::1|\[::1\])
+      port_listening "$port"
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+backend_local_endpoint_status() {
+  backend_local_endpoint_liveness
 }
 
 backend_local_endpoint_endpoint() {

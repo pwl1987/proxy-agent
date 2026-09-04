@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+if command -v readlink >/dev/null 2>&1; then
+  SCRIPT_PATH="$(readlink -f -- "$SCRIPT_PATH")"
+fi
+ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
+source "$ROOT/lib/common.sh"
 PROFILE_NAME="${PA_PROFILE:-}"
 if [[ "${1:-}" == "--profile" ]]; then
   [[ -n "${2:-}" ]] || { echo 'usage: proxy-agent-tui [--profile NAME]' >&2; exit 2; }
@@ -20,7 +25,14 @@ build_cli() {
 build_cli
 
 state_dir() {
-  local base="${PA_STATE_DIR:-/run/proxy-agent}"
+  local base
+  if [[ -n "${PA_STATE_DIR+x}" ]]; then
+    base="$PA_STATE_DIR"
+  elif (( EUID == 0 )); then
+    base=/run/proxy-agent
+  else
+    base="${XDG_RUNTIME_DIR:-$HOME/.cache/proxy-agent}/run"
+  fi
   [[ -n "$PROFILE_NAME" ]] && printf '%s/%s' "$base" "$PROFILE_NAME" || printf '%s' "$base"
 }
 

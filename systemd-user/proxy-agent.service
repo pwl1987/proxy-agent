@@ -1,0 +1,30 @@
+[Unit]
+Description=proxy-agent user service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=PA_STATE_DIR=%t/proxy-agent/run
+Environment=PA_LOG_DIR=%t/proxy-agent/log
+ExecStart=@BIN@/proxy-ctl run
+ExecStop=@BIN@/proxy-ctl stop
+ExecReload=@BIN@/proxy-ctl restart
+Restart=on-failure
+RestartSec=3
+KillMode=control-group
+TimeoutStopSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=default.target

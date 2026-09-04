@@ -1,9 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+if command -v readlink >/dev/null 2>&1; then
+  SCRIPT_PATH="$(readlink -f -- "$SCRIPT_PATH")"
+fi
+ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 source "$ROOT/lib/common.sh"
 source "$ROOT/lib/profile.sh"
+source "$ROOT/lib/backend-capabilities.sh"
+source "$ROOT/lib/backend.sh"
+source "$ROOT/lib/route.sh"
+source "$ROOT/lib/config.sh"
+source "$ROOT/lib/health.sh"
+source "$ROOT/lib/state.sh"
 
 PROFILE_NAME="${PA_PROFILE:-}"
 if [[ "${1:-}" == "--profile" ]]; then
@@ -11,15 +21,49 @@ if [[ "${1:-}" == "--profile" ]]; then
   PROFILE_NAME="$2"
   shift 2
 fi
-[[ $# -eq 0 ]] || die "usage: proxy-agent-health [--profile <name>]"
+[[ $# -eq 0 ]] || die 'usage: proxy-agent-health [--profile <name>]'
 
 if [[ -n "$PROFILE_NAME" ]]; then
   profile_load "$PROFILE_NAME"
-  PA_STATE_DIR="${PA_STATE_DIR:-/run/proxy-agent}/${PROFILE_NAME}"
+  if [[ "${PA_STATE_DIR_EXPLICIT:-false}" != true ]]; then
+    PA_STATE_DIR="${PA_STATE_DIR}/${PROFILE_NAME}"
+  fi
+  if [[ "${PA_LOG_DIR_EXPLICIT:-false}" != true ]]; then
+    PA_LOG_DIR="${PA_LOG_DIR}/${PROFILE_NAME}"
+  fi
   apply_config_defaults
 else
   load_config
 fi
+
+backend_load
+
+liveness_ok() {
+  backend_liveness >/dev/null 2>&1
+}
+
+network_ok() {
+  health_network_status >/dev/null 2>&1
+}
+
+health_check() {
+  if ! liveness_ok; then
+    return 10
+  fi
+  if [[ "${HEALTH_NETWORK_REQUIRED:-false}" == true ]]; then
+    network_ok || return 20
+  elif [[ -n "${HEALTH_TARGETS:-}" ]]; then
+    network_ok || return 30
+  fi
+}
+
+restart_agent() {
+  if [[ -n "$PROFILE_NAME" ]]; then
+    "$ROOT/bin/proxy-ctl" --profile "$PROFILE_NAME" restart
+  else
+    "$ROOT/bin/proxy-ctl" restart
+  fi
+}
 
 sync_runtime_state() {
   if [[ -n "$PROFILE_NAME" ]]; then
@@ -29,24 +73,19 @@ sync_runtime_state() {
   fi
 }
 
-attempt_test() {
-  if [[ -n "$PROFILE_NAME" ]]; then
-    "$ROOT/bin/proxy-ctl" --profile "$PROFILE_NAME" test
-  else
-    "$ROOT/bin/proxy-ctl" test
-  fi
-}
-
 retries="${HEALTH_RETRIES:-2}"
 backoff="${HEALTH_BACKOFF:-2}"
 attempt=1
+last_rc=1
 
 while (( attempt <= retries + 1 )); do
-  if attempt_test; then
-    mkdir -p "$PA_STATE_DIR"
-    date +%s >"$PA_STATE_DIR/healthy"
+  if health_check; then
+    health_mark healthy
     sync_runtime_state
+    log "health OK: liveness=ready network=$([[ -n "${HEALTH_TARGETS:-}" ]] && echo checked || echo skipped)"
     exit 0
+  else
+    last_rc=$?
   fi
   if (( attempt <= retries )); then
     sleep "$((backoff * attempt))"
@@ -54,26 +93,22 @@ while (( attempt <= retries + 1 )); do
   ((attempt += 1))
 done
 
-mkdir -p "$PA_STATE_DIR"
-date +%s >"$PA_STATE_DIR/unhealthy"
+health_mark unhealthy
 sync_runtime_state
-warn "proxy health check failed after $((retries + 1)) attempt(s)"
+warn "health check failed after $((retries + 1)) attempt(s), rc=$last_rc"
 
-if [[ "${HEALTH_AUTO_RECOVER:-true}" == "true" ]]; then
-  warn 'attempting automatic recovery'
-  if [[ -n "$PROFILE_NAME" ]]; then
-    "$ROOT/bin/proxy-ctl" --profile "$PROFILE_NAME" restart
-  else
-    "$ROOT/bin/proxy-ctl" restart
-  fi
-  if attempt_test; then
-    date +%s >"$PA_STATE_DIR/recovered"
-    sync_runtime_state
-    log 'automatic recovery succeeded'
-    exit 0
+if [[ "${HEALTH_AUTO_RECOVER:-true}" == true && "$last_rc" -eq 10 ]]; then
+  warn 'backend liveness failed; attempting automatic recovery'
+  if restart_agent; then
+    if health_check; then
+      health_mark recovered
+      sync_runtime_state
+      log 'automatic backend recovery succeeded'
+      exit 0
+    fi
   fi
   sync_runtime_state
-  warn 'automatic recovery failed'
+  warn 'automatic backend recovery failed'
 fi
 
 exit 1

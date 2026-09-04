@@ -50,8 +50,12 @@ INTEGRATE_DOCKER="false"
 INTEGRATE_PIP="false"
 INTEGRATE_NPM="false"
 
-# Health checks (comma separated URLs)
+# Health checks
+# Backend liveness is always checked. Network targets are only mandatory when
+# HEALTH_NETWORK_REQUIRED=true, which prevents transient Internet failures from
+# being misclassified as a dead local backend.
 HEALTH_TARGETS="https://github.com,https://pypi.org,https://registry.npmjs.org"
+HEALTH_NETWORK_REQUIRED="false"
 HEALTH_TIMEOUT="10"
 HEALTH_RETRIES="2"
 HEALTH_BACKOFF="2"

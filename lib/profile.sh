@@ -2,7 +2,13 @@
 set -euo pipefail
 
 profile_dir() {
-  printf '%s' "${PA_PROFILE_DIR:-/etc/proxy-agent/profiles}"
+  if [[ -n "${PA_PROFILE_DIR:-}" ]]; then
+    printf '%s' "$PA_PROFILE_DIR"
+  elif (( EUID == 0 )); then
+    printf '%s' /etc/proxy-agent/profiles
+  else
+    printf '%s/proxy-agent/profiles' "${XDG_CONFIG_HOME:-$HOME/.config}"
+  fi
 }
 
 profile_path() {

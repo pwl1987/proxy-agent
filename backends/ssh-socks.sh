@@ -110,7 +110,7 @@ backend_ssh_socks_start() {
   echo "$pid" >"$pid_file"
 
   for _ in {1..20}; do
-    if backend_ssh_socks_pid >/dev/null 2>&1 && listener_owned "$SOCKS_BIND" "$SOCKS_PORT" "$pid"; then
+    if backend_ssh_socks_liveness; then
       return 0
     fi
     if ! kill -0 "$pid" 2>/dev/null; then
@@ -140,9 +140,13 @@ backend_ssh_socks_stop() {
   kill -9 "$pid" 2>/dev/null || true
 }
 
-backend_ssh_socks_status() {
+backend_ssh_socks_liveness() {
   local pid
   pid="$(backend_ssh_socks_pid 2>/dev/null || true)"
   [[ -n "$pid" ]] || return 1
   listener_owned "$SOCKS_BIND" "$SOCKS_PORT" "$pid"
+}
+
+backend_ssh_socks_status() {
+  backend_ssh_socks_liveness
 }

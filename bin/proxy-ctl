@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+if command -v readlink >/dev/null 2>&1; then
+  SCRIPT_PATH="$(readlink -f -- "$SCRIPT_PATH")"
+fi
+ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 source "$ROOT/lib/common.sh"
 source "$ROOT/lib/profile.sh"
 source "$ROOT/lib/backend-capabilities.sh"
@@ -20,7 +24,12 @@ fi
 
 if [[ -n "$PROFILE_NAME" ]]; then
   profile_load "$PROFILE_NAME"
-  PA_STATE_DIR="${PA_STATE_DIR:-/run/proxy-agent}/${PROFILE_NAME}"
+  if [[ "${PA_STATE_DIR_EXPLICIT:-false}" != true ]]; then
+    PA_STATE_DIR="${PA_STATE_DIR}/${PROFILE_NAME}"
+  fi
+  if [[ "${PA_LOG_DIR_EXPLICIT:-false}" != true ]]; then
+    PA_LOG_DIR="${PA_LOG_DIR}/${PROFILE_NAME}"
+  fi
   apply_config_defaults
 else
   load_config

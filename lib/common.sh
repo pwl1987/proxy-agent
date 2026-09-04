@@ -1,20 +1,35 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PA_CONFIG="${PA_CONFIG:-/etc/proxy-agent/proxy-agent.conf}"
+if [[ -z "${PA_CONFIG+x}" ]]; then
+  PA_CONFIG_EXPLICIT=false
+  if (( EUID == 0 )); then
+    PA_CONFIG="/etc/proxy-agent/proxy-agent.conf"
+  else
+    PA_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/proxy-agent/proxy-agent.conf"
+  fi
+else
+  PA_CONFIG_EXPLICIT=true
+fi
 if [[ -z "${PA_STATE_DIR+x}" ]]; then
+  PA_STATE_DIR_EXPLICIT=false
   if (( EUID == 0 )); then
     PA_STATE_DIR="/run/proxy-agent"
   else
     PA_STATE_DIR="${XDG_RUNTIME_DIR:-$HOME/.cache/proxy-agent}/run"
   fi
+else
+  PA_STATE_DIR_EXPLICIT=true
 fi
 if [[ -z "${PA_LOG_DIR+x}" ]]; then
+  PA_LOG_DIR_EXPLICIT=false
   if (( EUID == 0 )); then
     PA_LOG_DIR="/var/log/proxy-agent"
   else
-    PA_LOG_DIR="${XDG_RUNTIME_DIR:-$HOME/.cache/proxy-agent}/log"
+    PA_LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/proxy-agent/log"
   fi
+else
+  PA_LOG_DIR_EXPLICIT=true
 fi
 
 log() { printf '[proxy-agent] %s\n' "$*"; }
@@ -52,6 +67,7 @@ apply_config_defaults() {
   : "${HTTP_ENABLED:=false}"
   : "${HTTP_BIND:=127.0.0.1}"
   : "${HTTP_PORT:=8118}"
+  : "${HEALTH_NETWORK_REQUIRED:=false}"
   : "${HEALTH_TIMEOUT:=10}"
   : "${HEALTH_RETRIES:=2}"
   : "${HEALTH_BACKOFF:=2}"

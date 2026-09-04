@@ -14,6 +14,7 @@
 
 ## V2 control plane — completed
 - Formal backend lifecycle contract ✅
+- Explicit backend liveness contract ✅
 - Formal backend capability contract ✅
 - Named proxy profiles ✅
 - Profile selection from CLI and TUI ✅
@@ -49,23 +50,32 @@
 - Exact listener-to-process ownership check ✅
 - Stale SSH PID file cleanup ✅
 
-## V2 next gate — operator portability
-- Rootless interactive installation/execution without requiring a system account
-- Upgrade/migration checks for existing installations
-- Separate backend liveness from active network health probes
+## V2 operator portability — completed
+- Rootless interactive installation/execution without requiring a system account ✅
+- XDG configuration/profile/runtime paths ✅
+- Rootless user systemd service/profile/health templates ✅
+- Custom user install paths propagated into generated user units ✅
+- Symlink-safe installed entrypoints ✅
+
+## V2 backend compatibility — in progress
+- Separate backend liveness from active network health probes ✅
+- Define adapter/backend compatibility matrix and tests 🟡
+- Current sing-box integration against the stable contract 🟡
+- Current mihomo integration against the stable contract
+- HTTP CONNECT upstream backend
 
 ## V2 backends
 1. SSH SOCKS5 ✅
 2. Existing local SOCKS/HTTP endpoint ✅
-3. sing-box
+3. sing-box 🟡
 4. mihomo
 5. HTTP CONNECT upstream
 
-Every managed backend implements the same semantic lifecycle contract:
-`validate/start/stop/status/endpoint/managed/pid/process_identity/capabilities`.
+Managed backends implement:
+`validate/start/stop/liveness/status/endpoint/managed/pid/process_identity/capabilities`.
 
 ## V2 deployment
-- Rootless Linux execution
+- Rootless Linux execution ✅
 - Container image and host/container network documentation
 - Reproducible installation and upgrade path ✅
 - Security hardening and least-privilege service account ✅

@@ -90,6 +90,7 @@ config_validate_core() {
   config_is_bind HTTP_BIND "${HTTP_BIND:-}"
   config_is_uint_range HTTP_PORT "${HTTP_PORT:-}" 1 65535
 
+  config_is_bool HEALTH_NETWORK_REQUIRED "${HEALTH_NETWORK_REQUIRED:-false}"
   config_is_uint_range HEALTH_TIMEOUT "${HEALTH_TIMEOUT:-}" 1 3600
   config_is_uint_range HEALTH_RETRIES "${HEALTH_RETRIES:-}" 0 100
   config_is_uint_range HEALTH_BACKOFF "${HEALTH_BACKOFF:-}" 0 3600
@@ -131,6 +132,13 @@ config_validate_backend_fields() {
     local-endpoint)
       config_validate_proxy_url LOCAL_PROXY_URL "${LOCAL_PROXY_URL:-}"
       [[ -z "${LOCAL_PROXY_STATUS_TARGET:-}" || "${LOCAL_PROXY_STATUS_TARGET}" =~ ^https?://[^[:space:]]+$ ]] || config_error 'LOCAL_PROXY_STATUS_TARGET must be an http(s) URL'
+      ;;
+    sing-box)
+      local config
+      config="$(expand_home "${SING_BOX_CONFIG:-}")"
+      [[ -n "$config" ]] || config_error 'SING_BOX_CONFIG is required for sing-box'
+      [[ -r "$config" ]] || config_error "SING_BOX_CONFIG is not readable: $config"
+      [[ ! -e "$config" ]] || require_secure_config_file "$config" || config_error "SING_BOX_CONFIG must be owner-readable with no group/other write or other-read access: $config"
       ;;
   esac
 }
