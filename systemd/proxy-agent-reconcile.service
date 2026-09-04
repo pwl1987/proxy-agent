@@ -1,0 +1,23 @@
+[Unit]
+Description=proxy-agent desired-state reconciler
+After=proxy-agent.service
+
+[Service]
+Type=oneshot
+User=@SERVICE_USER@
+Group=@SERVICE_GROUP@
+UMask=0077
+ExecStart=/bin/bash @PREFIX@/bin/proxy-agent-reconcile
+Environment=PA_STATE_DIR=/run/proxy-agent
+Environment=PA_LOG_DIR=/var/log/proxy-agent
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
