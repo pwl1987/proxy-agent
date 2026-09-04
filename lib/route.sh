@@ -53,7 +53,7 @@ route_validate_rules() {
     IFS='|' read -r priority action matcher pattern extra <<< "$line"
     if [[ -n "${extra:-}" || -z "${pattern:-}" ]]; then
       printf '[config] ERROR: ROUTE_RULES line %d must be priority|action|matcher|pattern\n' "$line_no" >&2
-      errors=$((errors + 1)
+      errors=$((errors + 1))
       continue
     fi
     if [[ ! "$priority" =~ ^[0-9]+$ ]]; then
@@ -61,7 +61,7 @@ route_validate_rules() {
       errors=$((errors + 1))
     fi
     if [[ "$action" != DIRECT && "$action" != PROXY ]]; then
-      printf '[config] ERROR: ROUTE_RULES line %d has invalid action: %s\n' "$line_no" "$action"
+      printf '[config] ERROR: ROUTE_RULES line %d has invalid action: %s\n' "$line_no" "$action" >&2
       errors=$((errors + 1))
     fi
     case "$matcher" in
@@ -73,7 +73,7 @@ route_validate_rules() {
         ;;
       cidr)
         valid_ipv4_cidr "$pattern" || {
-          printf '[config] ERROR: ROUTE_RULES line %d has invalid CIDR: %s\n' "$line_no" "$pattern" >&2
+          printf '[config] ERROR: ROUTE_RULES line %d has invalid CIDR: %s\n' "$line_no" >&2
           errors=$((errors + 1))
         }
         ;;
