@@ -1,0 +1,1 @@
+Revision and audit lock stale-owner behavior is covered by the dedicated smoke tests.
