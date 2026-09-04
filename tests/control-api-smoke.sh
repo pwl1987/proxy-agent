@@ -5,8 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"
 SOCKET="$TMP/control.sock"
 CONFIG="$TMP/proxy-agent.conf"
-PID=""
-trap '[[ -z "$PID" ]] || kill "$PID" >/dev/null 2>&1 || true; rm -rf "$TMP"' EXIT
+trap '[[ -z "${PID:-}" ]] || kill "$PID" >/dev/null 2>&1 || true; rm -rf "$TMP"' EXIT
 
 cat >"$CONFIG" <<'EOF'
 BACKEND="local-endpoint"
@@ -93,7 +92,8 @@ obj=json.load(open(sys.argv[1]))
 assert obj["kind"] == "apply"
 assert obj["data"]["revision"] == 1
 assert obj["data"]["desired_revision"] == 1
-assert obj["data"]["runtime"] == "pending_reconcile"
+assert obj["data"]["reconcile"]["status"] == "projected"
+assert obj["data"]["reconcile"]["observed_revision"] == 1
 PY
 
 conflict_status="$(curl --silent --show-error --unix-socket "$SOCKET" -o "$TMP/conflict.json" -w '%{http_code}' -H 'Content-Type: application/json' -X POST --data '{"revision":1,"if_match_revision":0}' http://localhost/api/v1/apply)"
@@ -102,5 +102,11 @@ grep -q 'revision_conflict' "$TMP/conflict.json"
 
 rollback_status="$(curl --silent --show-error --unix-socket "$SOCKET" -o "$TMP/rollback.json" -w '%{http_code}' -H 'Content-Type: application/json' -X POST --data '{"revision":1,"if_match_revision":1,"actor":"smoke"}' http://localhost/api/v1/rollback)"
 [[ "$rollback_status" == "202" ]]
+python3 - "$TMP/rollback.json" <<'PY'
+import json, sys
+obj=json.load(open(sys.argv[1]))
+assert obj["data"]["reconcile"]["status"] == "projected"
+assert obj["data"]["reconcile"]["observed_revision"] == obj["data"]["revision"]
+PY
 
-echo 'control API smoke: PASS'
+printf 'control API smoke: PASS\n'
