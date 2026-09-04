@@ -45,7 +45,9 @@ health_probe_target() {
 health_probe_backend() {
   local target="${LOCAL_PROXY_STATUS_TARGET:-}"
   [[ -n "$target" ]] || return 2
-  health_probe_target "$target"
+  curl -fsS --proxy "${LOCAL_PROXY_URL:?LOCAL_PROXY_URL is required}" \
+    --max-time "${HEALTH_TIMEOUT:-5}" --connect-timeout "${HEALTH_TIMEOUT:-5}" \
+    -o /dev/null "$target"
 }
 
 health_probe_network() {
@@ -59,7 +61,7 @@ health_probe_network() {
 
 health_liveness() {
   local prefix="$1"
-  "${prefix}_status"
+  "${prefix}_liveness"
 }
 
 health_network_status() {
