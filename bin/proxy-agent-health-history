@@ -18,12 +18,12 @@ JSON_ONLY=false
 while (($#)); do
   case "$1" in
     --profile)
-      [[ -n "${2:-}" ]] || die 'usage: proxy-agent-health-history [--profile <name>] [--limit N] [--json]'
+      [[ -n "${2:-}" ]] || die '用法：proxy-agent-health-history [--profile 名称] [--limit 数量] [--json]'
       PROFILE_NAME="$2"
       shift 2
       ;;
     --limit)
-      [[ "${2:-}" =~ ^[0-9]+$ && "$2" -ge 1 ]] || die 'limit must be a positive integer'
+      [[ "${2:-}" =~ ^[0-9]+$ && "$2" -ge 1 ]] || die '错误：limit 必须是正整数'
       LIMIT="$2"
       shift 2
       ;;
@@ -32,7 +32,7 @@ while (($#)); do
       shift
       ;;
     *)
-      die 'usage: proxy-agent-health-history [--profile <name>] [--limit N] [--json]'
+      die '用法：proxy-agent-health-history [--profile 名称] [--limit 数量] [--json]'
       ;;
   esac
 done
@@ -52,7 +52,7 @@ fi
 
 history_file="$(state_dir)/health-history.jsonl"
 if [[ ! -r "$history_file" ]]; then
-  $JSON_ONLY || printf 'No health history for profile %s.\n' "${PROFILE_NAME:-default}"
+  $JSON_ONLY || printf '配置档案 %s 暂无健康检查历史。\n' "${PROFILE_NAME:-default}"
   exit 0
 fi
 
@@ -61,17 +61,27 @@ if $JSON_ONLY; then
   exit 0
 fi
 
-printf 'Health history: profile=%s\n' "${PROFILE_NAME:-default}"
-printf '%-12s %-11s %-8s %s\n' 'TIME' 'RESULT' 'NETWORK' 'DETAIL'
+printf '健康检查历史：配置档案=%s\n' "${PROFILE_NAME:-default}"
+printf '%-19s %-10s %-10s %s\n' '时间' '结果' '网络' '详情'
 tail -n "$LIMIT" "$history_file" | while IFS= read -r line; do
   ts="$(printf '%s\n' "$line" | sed -n 's/.*"timestamp":\([0-9][0-9]*\).*/\1/p')"
   result="$(printf '%s\n' "$line" | sed -n 's/.*"result":"\([^"]*\)".*/\1/p')"
   network="$(printf '%s\n' "$line" | sed -n 's/.*"network":"\([^"]*\)".*/\1/p')"
   detail="$(printf '%s\n' "$line" | sed -n 's/.*"detail":"\([^"]*\)".*/\1/p')"
+  case "$result" in
+    healthy) result='正常' ;;
+    unhealthy) result='异常' ;;
+    recovered) result='已恢复' ;;
+  esac
+  case "$network" in
+    checked) network='已检测' ;;
+    skipped) network='已跳过' ;;
+    failed) network='失败' ;;
+  esac
   if [[ "$ts" =~ ^[0-9]+$ ]]; then
     time="$(date -d "@$ts" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || printf '%s' "$ts")"
   else
-    time='unknown'
+    time='未知'
   fi
-  printf '%-12s %-11s %-8s %s\n' "$time" "$result" "$network" "$detail"
+  printf '%-19s %-10s %-10s %s\n' "$time" "$result" "$network" "$detail"
 done
