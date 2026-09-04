@@ -29,7 +29,8 @@ ln -sf "$PREFIX/bin/proxy-agent-profile" "$BIN/proxy-agent-profile"
 ln -sf "$PREFIX/bin/proxy-agent-version" "$BIN/proxy-agent-version"
 
 for unit in proxy-agent.service proxy-agent@.service proxy-agent-health.service proxy-agent-health@.service; do
-  install -m 0644 "$ROOT/systemd-user/$unit" "$SYSTEMD_USER_DIR/$unit"
+  sed "s#@BIN@#$BIN#g" "$ROOT/systemd-user/$unit" >"$SYSTEMD_USER_DIR/$unit"
+  chmod 0644 "$SYSTEMD_USER_DIR/$unit"
 done
 install -m 0644 "$ROOT/systemd-user/proxy-agent-health.timer" "$SYSTEMD_USER_DIR/proxy-agent-health.timer"
 install -m 0644 "$ROOT/systemd-user/proxy-agent-health@.timer" "$SYSTEMD_USER_DIR/proxy-agent-health@.timer"
