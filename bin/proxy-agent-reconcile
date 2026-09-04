@@ -10,6 +10,7 @@ import subprocess
 import sys
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Optional
 
 try:
     import fcntl
@@ -95,12 +96,13 @@ def bootstrap_desired() -> int:
 def activate(runtime_config: Path, desired_revision: int, state_path: Path) -> dict[str, object]:
     backup = runtime_config.with_name(f".{runtime_config.name}.previous")
     had_previous = runtime_config.exists()
-    previous_source = Path(os.environ.get("PA_RUNTIME_ACTIVE_CONFIG", ""))
+    previous_active = os.environ.get("PA_RUNTIME_ACTIVE_CONFIG", "")
+    previous_source: Optional[Path] = Path(previous_active) if previous_active else None
     if had_previous:
         shutil.copy2(runtime_config, backup)
         previous_source = backup
 
-    if previous_source:
+    if previous_source is not None:
         old_stop = run_proxy_ctl(previous_source, "stop")
         if old_stop.returncode:
             if backup.exists():
