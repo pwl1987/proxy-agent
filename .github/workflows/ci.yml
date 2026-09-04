@@ -37,6 +37,14 @@ jobs:
         run: |
           ! ./upgrade.sh >/dev/null 2>&1
           if [[ "$EUID" -ne 0 ]]; then ! ./upgrade-user.sh >/dev/null 2>&1; fi
+      - name: Container contract smoke
+        run: |
+          test -f Containerfile
+          grep -q '^FROM debian:bookworm-slim$' Containerfile
+          grep -q '^ENTRYPOINT \["/opt/proxy-agent/bin/proxy-ctl"\]$' Containerfile
+          grep -q '^CMD \["run"\]$' Containerfile
+          grep -q '^USER \$SERVICE_USER$' Containerfile
+          grep -q '^HEALTHCHECK ' Containerfile
       - name: systemd unit contract smoke
         run: |
           for unit in systemd/*.service systemd/*.timer systemd-user/*.service systemd-user/*.timer; do
