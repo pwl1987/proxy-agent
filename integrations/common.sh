@@ -5,7 +5,7 @@ integration_proxy_url() {
   if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then
     printf 'http://%s:%s' "$HTTP_BIND" "$HTTP_PORT"
   else
-    printf 'socks5h://%s:%s' "$SOCKS_BIND" "$SOCKS_PORT"
+    backend_endpoint
   fi
 }
 
@@ -27,8 +27,10 @@ integration_enabled() {
 }
 
 integration_require_http() {
-  [[ "${HTTP_ENABLED:-false}" == "true" ]] || {
-    printf 'WARNING: %s integration requires HTTP_ENABLED=true; SOCKS-only mode is not supported by this adapter.\n' "$1" >&2
-    return 1
-  }
+  if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then
+    return 0
+  fi
+  backend_capability http_native && return 0
+  printf 'WARNING: %s integration requires an HTTP-capable active proxy path; enable HTTP_ENABLED or use a backend with http_native capability.\n' "$1" >&2
+  return 1
 }
