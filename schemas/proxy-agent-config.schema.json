@@ -5,15 +5,7 @@
   "description": "Canonical typed configuration model for the proxy-agent control plane. Existing shell configuration remains a compatibility format during V3 migration.",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "schema_version",
-    "backend",
-    "listeners",
-    "health",
-    "integrations",
-    "routing",
-    "security"
-  ],
+  "required": ["schema_version", "backend", "listeners", "health", "integrations", "routing", "security"],
   "properties": {
     "schema_version": {
       "type": "integer",
@@ -45,37 +37,17 @@
       "additionalProperties": false,
       "required": ["socks5"],
       "properties": {
-        "socks5": {
-          "$ref": "#/$defs/listener"
-        },
+        "socks5": {"$ref": "#/$defs/listener"},
         "http": {
-          "oneOf": [
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["enabled", "bind", "port"],
-              "properties": {
-                "enabled": {"const": false},
-                "bind": {"type": "string"},
-                "port": {"$ref": "#/$defs/port"}
-              }
-            },
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["enabled", "bind", "port"],
-              "properties": {
-                "enabled": {"const": true},
-                "bind": {"type": "string", "minLength": 1},
-                "port": {"$ref": "#/$defs/port"}
-              }
-            }
-          ],
-          "default": {
-            "enabled": false,
-            "bind": "127.0.0.1",
-            "port": 8118
-          }
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "bind", "port"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "bind": {"type": "string", "minLength": 1},
+            "port": {"$ref": "#/$defs/port"}
+          },
+          "default": {"enabled": false, "bind": "127.0.0.1", "port": 8118}
         }
       }
     },
@@ -103,27 +75,11 @@
         },
         "rules": {
           "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["match", "action"],
-            "properties": {
-              "match": {"$ref": "#/$defs/nonEmptyString"},
-              "action": {
-                "type": "string",
-                "enum": ["proxy", "direct"]
-              }
-            }
-          },
+          "items": {"$ref": "#/$defs/routeRule"},
           "default": []
         }
       },
-      "default": {
-        "direct_cidrs": [],
-        "direct_domains": [],
-        "no_proxy_extra": [],
-        "rules": []
-      }
+      "default": {"direct_cidrs": [], "direct_domains": [], "no_proxy_extra": [], "rules": []}
     },
     "health": {
       "type": "object",
@@ -159,10 +115,7 @@
       "additionalProperties": false,
       "required": ["ssh_host_key_checking", "allow_public_listener"],
       "properties": {
-        "ssh_host_key_checking": {
-          "type": "string",
-          "enum": ["yes", "accept-new"]
-        },
+        "ssh_host_key_checking": {"type": "string", "enum": ["yes", "accept-new"]},
         "allow_public_listener": {
           "type": "boolean",
           "default": false,
@@ -176,28 +129,22 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["bind", "port"],
+      "properties": {"bind": {"type": "string", "minLength": 1}, "port": {"$ref": "#/$defs/port"}}
+    },
+    "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+    "nonEmptyString": {"type": "string", "minLength": 1},
+    "hostnamePattern": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9_*.?-]+$"},
+    "httpUrl": {"type": "string", "pattern": "^https?://[^\\s]+$"},
+    "routeRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["priority", "action", "matcher", "pattern"],
       "properties": {
-        "bind": {"type": "string", "minLength": 1},
-        "port": {"$ref": "#/$defs/port"}
+        "priority": {"type": "integer", "minimum": 0, "maximum": 1000000},
+        "action": {"type": "string", "enum": ["proxy", "direct"]},
+        "matcher": {"type": "string", "enum": ["exact", "suffix", "wildcard", "cidr"]},
+        "pattern": {"type": "string", "minLength": 1}
       }
-    },
-    "port": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 65535
-    },
-    "nonEmptyString": {
-      "type": "string",
-      "minLength": 1
-    },
-    "hostnamePattern": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^[A-Za-z0-9_*.?-]+$"
-    },
-    "httpUrl": {
-      "type": "string",
-      "pattern": "^https?://[^\\s]+$"
     }
   }
 }
