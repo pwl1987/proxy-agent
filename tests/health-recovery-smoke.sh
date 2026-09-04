@@ -12,6 +12,7 @@ export HEALTH_RECOVERY_MAX_ATTEMPTS=2
 export HEALTH_RECOVERY_WINDOW=900
 export HEALTH_RECOVERY_COOLDOWN=0
 
+source "$ROOT/lib/common.sh"
 source "$ROOT/lib/health.sh"
 
 health_recovery_allowed
