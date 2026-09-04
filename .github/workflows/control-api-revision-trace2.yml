@@ -1,0 +1,18 @@
+name: Control API revision trace 2
+
+on:
+  push:
+    branches: [debug/0.4-revision-trace2]
+
+permissions:
+  contents: read
+
+jobs:
+  trace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install trace dependency
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends inotify-tools
+      - name: Run revision trace
+        run: bash tests/control-api-revision-trace2.sh
