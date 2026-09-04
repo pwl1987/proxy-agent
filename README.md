@@ -1,6 +1,6 @@
 # proxy-agent
 
-通用 Linux Proxy Agent：统一管理代理后端、分流策略、环境变量、应用适配与健康检查。
+通用 Linux Proxy Agent：统一管理代理后端、分流策略、环境变量、应用适配、健康检查与人工运维。
 
 > 从 `devops-scripts/proxy-agent` 独立演进。新项目不再绑定具体服务器、IP、目录或单一出口。
 
@@ -12,6 +12,7 @@
 - **安全默认值**：本地监听默认 `127.0.0.1`，SSH host key 校验默认开启。
 - **应用适配**：Git、Docker、pip、npm 通过独立 integration 模块生成配置，不让主控制器继续膨胀。
 - **可诊断**：`status`、`test`、`diagnose`、`route`、`doctor` 提供明确故障定位信息。
+- **人工运维**：可选 TUI 提供实时状态与常用操作，不改变核心控制逻辑。
 - **VM / container**：核心逻辑尽量无状态，systemd、Docker 等作为运行时适配层。
 
 ## 快速开始
@@ -23,6 +24,12 @@ sudo proxy-ctl doctor
 sudo proxy-ctl start
 sudo proxy-ctl status
 sudo proxy-ctl test
+```
+
+交互式运维：
+
+```bash
+sudo proxy-ctl tui
 ```
 
 当前 shell 使用代理：
@@ -80,9 +87,28 @@ proxy-ctl doctor
 proxy-ctl route <host-or-ip>
 proxy-ctl env [--off]
 proxy-ctl integration <git|docker|pip|npm|all>
+proxy-ctl tui
 ```
 
 `route` 目前解释 domain / IPv4 CIDR 策略；它是策略诊断命令，不会修改系统路由表。
+
+## TUI
+
+TUI 是可选的终端运维界面，直接复用 `proxy-ctl` 的生命周期与诊断路径：
+
+| Key | Action |
+|---|---|
+| `s` | Start |
+| `x` | Stop |
+| `r` | Restart |
+| `t` | Connectivity test |
+| `d` | Diagnose |
+| `i` | Integration view |
+| `R` | Route query |
+| `Enter` | Refresh |
+| `q` | Quit |
+
+TUI 只依赖交互式终端与常见的 `tput`，因此不是核心运行时的强制依赖。详见 [TUI.md](TUI.md)。
 
 ## Application integrations
 
@@ -141,8 +167,10 @@ systemd health unit 会同步使用自定义 `PREFIX`。
                          |            |
                       SOCKS5      HTTP proxy
                                |
-                      Integrations
-                git / docker / pip / npm
+                  +------------+------------+
+                  |                         |
+             Integrations                  TUI
+          git/docker/pip/npm        operator console
 ```
 
 ## 安全边界
@@ -155,6 +183,6 @@ systemd health unit 会同步使用自定义 `PREFIX`。
 
 ## 项目状态
 
-当前为 **v2 foundation**。Config → Routing → Backend → Adapter → Health → Integration 的边界已经建立；下一阶段重点是多 backend、容器运行时、配置 profile，以及更完整的集成测试矩阵。
+当前为 **v2 foundation / 0.1.0**。Config → Routing → Backend → Adapter → Health → Integration 的边界已经建立，并加入可选 TUI。下一阶段重点是多 backend、profile、容器运行时、配置验证与更完整的集成测试矩阵。
 
 许可证：MIT
