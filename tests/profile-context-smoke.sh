@@ -33,13 +33,15 @@ check_explicit_context() {
       source "$1/lib/profile.sh"
       source "$1/lib/profile-context.sh"
       profile_apply_context alpha
-      printf "%s\n%s\n%s\n%s\n" "$PA_PROFILE" "$PA_CONFIG" "$PA_STATE_DIR" "$PA_LOG_DIR"
+      printf "%s\n%s\n%s\n%s\n%s\n%s\n" "$PA_PROFILE" "$PA_CONFIG" "$PA_STATE_DIR" "$PA_LOG_DIR" "$PA_STATE_DIR_EXPLICIT" "$PA_LOG_DIR_EXPLICIT"
     ' _ "$ROOT" >"$TMP/alpha.out"
   mapfile -t values <"$TMP/alpha.out"
   [[ "${values[0]}" == alpha ]]
   [[ "${values[1]}" == "$PROFILE_DIR/alpha.conf" ]]
   [[ "${values[2]}" == "$BASE_STATE" ]]
   [[ "${values[3]}" == "$BASE_LOG" ]]
+  [[ "${values[4]}" == true ]]
+  [[ "${values[5]}" == true ]]
 }
 
 check_default_context() {
@@ -57,13 +59,15 @@ check_default_context() {
       source "$1/lib/profile.sh"
       source "$1/lib/profile-context.sh"
       profile_apply_context beta
-      printf "%s\n%s\n%s\n%s\n" "$PA_PROFILE" "$PA_CONFIG" "$PA_STATE_DIR" "$PA_LOG_DIR"
+      printf "%s\n%s\n%s\n%s\n%s\n%s\n" "$PA_PROFILE" "$PA_CONFIG" "$PA_STATE_DIR" "$PA_LOG_DIR" "$PA_STATE_DIR_EXPLICIT" "$PA_LOG_DIR_EXPLICIT"
     ' _ "$ROOT" >"$TMP/beta.out"
   mapfile -t values <"$TMP/beta.out"
   [[ "${values[0]}" == beta ]]
   [[ "${values[1]}" == "$PROFILE_DIR/beta.conf" ]]
   [[ "${values[2]}" == "$expected_state" ]]
   [[ "${values[3]}" == "$expected_log" ]]
+  [[ "${values[4]}" == true ]]
+  [[ "${values[5]}" == true ]]
 }
 
 check_explicit_context
