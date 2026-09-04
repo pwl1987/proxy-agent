@@ -91,7 +91,8 @@ assert obj["data"]["revision"] == 1
 PY
 
 echo '--- revision detail response ---'
-curl_unix /api/v1/revisions/1 | tee "$TMP/revision-detail.json"
+curl_unix /api/v1/revisions/1 >"$TMP/revision-detail.json"
+cat "$TMP/revision-detail.json"
 python3 - "$TMP/revision-detail.json" <<'PY'
 import json, sys
 obj=json.load(open(sys.argv[1]))
