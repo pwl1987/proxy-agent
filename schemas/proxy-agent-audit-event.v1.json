@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/pwl1987/proxy-agent/schema/proxy-agent-audit-event.v1.json",
+  "title": "proxy-agent audit event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "event", "actor", "timestamp"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "event": {"type": "string", "enum": ["revision.created", "desired_state.activated", "desired_state.activation_failed", "rollback.activated", "rollback.activation_failed"]},
+    "actor": {"type": "string", "minLength": 1},
+    "timestamp": {"type": "integer", "minimum": 0},
+    "revision": {"type": "integer", "minimum": 1},
+    "target_revision": {"type": "integer", "minimum": 1},
+    "status": {"type": "string", "minLength": 1},
+    "error": {"type": "string", "minLength": 1},
+    "change_summary": {"type": "string", "minLength": 1}
+  }
+}
