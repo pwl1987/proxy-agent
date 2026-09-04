@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+if command -v readlink >/dev/null 2>&1; then
+  SCRIPT_PATH="$(readlink -f -- "$SCRIPT_PATH")"
+fi
+ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
+source "$ROOT/lib/common.sh"
+source "$ROOT/lib/profile.sh"
+source "$ROOT/lib/config.sh"
+source "$ROOT/lib/state.sh"
+
+PROFILE_NAME="${PA_PROFILE:-}"
+LIMIT=20
+JSON_ONLY=false
+
+while (($#)); do
+  case "$1" in
+    --profile)
+      [[ -n "${2:-}" ]] || die 'usage: proxy-agent-health-history [--profile <name>] [--limit N] [--json]'
+      PROFILE_NAME="$2"
+      shift 2
+      ;;
+    --limit)
+      [[ "${2:-}" =~ ^[0-9]+$ && "$2" -ge 1 ]] || die 'limit must be a positive integer'
+      LIMIT="$2"
+      shift 2
+      ;;
+    --json)
+      JSON_ONLY=true
+      shift
+      ;;
+    *)
+      die 'usage: proxy-agent-health-history [--profile <name>] [--limit N] [--json]'
+      ;;
+  esac
+done
+
+if [[ -n "$PROFILE_NAME" ]]; then
+  profile_load "$PROFILE_NAME"
+  if [[ "${PA_STATE_DIR_EXPLICIT:-false}" != true ]]; then
+    PA_STATE_DIR="${PA_STATE_DIR}/${PROFILE_NAME}"
+  fi
+  if [[ "${PA_LOG_DIR_EXPLICIT:-false}" != true ]]; then
+    PA_LOG_DIR="${PA_LOG_DIR}/${PROFILE_NAME}"
+  fi
+  apply_config_defaults
+else
+  load_config
+fi
+
+history_file="$(state_dir)/health-history.jsonl"
+if [[ ! -r "$history_file" ]]; then
+  $JSON_ONLY || printf 'No health history for profile %s.\n' "${PROFILE_NAME:-default}"
+  exit 0
+fi
+
+if $JSON_ONLY; then
+  tail -n "$LIMIT" "$history_file"
+  exit 0
+fi
+
+printf 'Health history: profile=%s\n' "${PROFILE_NAME:-default}"
+printf '%-12s %-11s %-8s %s\n' 'TIME' 'RESULT' 'NETWORK' 'DETAIL'
+tail -n "$LIMIT" "$history_file" | while IFS= read -r line; do
+  ts="$(printf '%s\n' "$line" | sed -n 's/.*"timestamp":\([0-9][0-9]*\).*/\1/p')"
+  result="$(printf '%s\n' "$line" | sed -n 's/.*"result":"\([^"]*\)".*/\1/p')"
+  network="$(printf '%s\n' "$line" | sed -n 's/.*"network":"\([^"]*\)".*/\1/p')"
+  detail="$(printf '%s\n' "$line" | sed -n 's/.*"detail":"\([^"]*\)".*/\1/p')"
+  if [[ "$ts" =~ ^[0-9]+$ ]]; then
+    time="$(date -d "@$ts" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || printf '%s' "$ts")"
+  else
+    time='unknown'
+  fi
+  printf '%-12s %-11s %-8s %s\n' "$time" "$result" "$network" "$detail"
+done
