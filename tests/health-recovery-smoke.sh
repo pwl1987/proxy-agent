@@ -14,6 +14,7 @@ export HEALTH_RECOVERY_COOLDOWN=0
 
 source "$ROOT/lib/common.sh"
 source "$ROOT/lib/health.sh"
+source "$ROOT/lib/state.sh"
 
 health_recovery_allowed
 health_recovery_allowed
