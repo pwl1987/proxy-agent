@@ -2,13 +2,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=../lib/common.sh
 source "$ROOT/lib/common.sh"
-# shellcheck source=../lib/profile.sh
 source "$ROOT/lib/profile.sh"
-# shellcheck source=../lib/backend-capabilities.sh
 source "$ROOT/lib/backend-capabilities.sh"
-# shellcheck source=../adapters/privoxy.sh
+source "$ROOT/lib/backend.sh"
 source "$ROOT/adapters/privoxy.sh"
 
 PROFILE_NAME="${PA_PROFILE:-}"
@@ -35,26 +32,8 @@ if [[ -n "$PROFILE_NAME" ]]; then
   : "${HEALTH_TIMEOUT:=10}"
 fi
 
-backend_function_prefix() { printf 'backend_%s' "${1//-/_}"; }
-backend_load() {
-  local name="$BACKEND" file prefix
-  [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid backend name: $name"
-  file="$ROOT/backends/$name.sh"
-  [[ -r "$file" ]] || die "backend implementation not found: $file"
-  # shellcheck disable=SC1090
-  source "$file"
-  prefix="$(backend_function_prefix "$name")"
-  declare -F "${prefix}_start" >/dev/null || die "backend '$name' missing start contract"
-  declare -F "${prefix}_stop" >/dev/null || die "backend '$name' missing stop contract"
-  declare -F "${prefix}_status" >/dev/null || die "backend '$name' missing status contract"
-  declare -F "${prefix}_endpoint" >/dev/null || die "backend '$name' missing endpoint contract"
-}
 backend_load
 
-backend_start() { "$(backend_function_prefix "$BACKEND")_start"; }
-backend_stop() { "$(backend_function_prefix "$BACKEND")_stop"; }
-backend_status() { "$(backend_function_prefix "$BACKEND")_status"; }
-backend_endpoint() { "$(backend_function_prefix "$BACKEND")_endpoint"; }
 adapter_start() {
   [[ "${HTTP_ENABLED:-false}" == "true" ]] || return 0
   backend_require_capability socks5
@@ -114,8 +93,6 @@ cmd_diagnose() {
   echo "backend: $BACKEND"
   echo "endpoint: $(backend_endpoint 2>/dev/null || printf unavailable)"
   echo "capabilities: $(backend_capabilities | tr '\n' ' ')"
-  echo "SOCKS: ${SOCKS_BIND}:${SOCKS_PORT}"
-  echo "HTTP:  ${HTTP_ENABLED:-false} ${HTTP_BIND}:${HTTP_PORT}"
   if [[ -n "${REMOTE_HOST:-}" && "${REMOTE_HOST:-}" != *example.com && "${REMOTE_HOST:-}" != 'your-ssh-host' ]]; then
     getent hosts "$REMOTE_HOST" || warn "cannot resolve $REMOTE_HOST"
   fi
@@ -187,15 +164,17 @@ cmd_profiles() { exec "$ROOT/bin/proxy-agent-profile" "${1:-list}" "${2:-}"; }
 cmd_capabilities() { backend_capabilities; }
 cmd_doctor() {
   local rc=0
-  [[ "$SOCKS_BIND" != '0.0.0.0' ]] || { warn 'SOCKS is exposed on all interfaces'; rc=1; }
-  [[ "${SSH_STRICT_HOST_KEY_CHECKING:-yes}" == 'yes' ]] || { warn 'SSH host-key verification is disabled'; rc=1; }
-  [[ -n "${REMOTE_HOST:-}" ]] || { warn 'REMOTE_HOST is empty'; rc=1; }
-  [[ "${REMOTE_HOST:-}" != 'proxy.example.com' && "${REMOTE_HOST:-}" != 'your-ssh-host' ]] || { warn 'REMOTE_HOST still uses the example placeholder'; rc=1; }
-  [[ "$SOCKS_PORT" =~ ^[0-9]+$ && "$SOCKS_PORT" -ge 1 && "$SOCKS_PORT" -le 65535 ]] || { warn 'invalid SOCKS_PORT'; rc=1; }
+  [[ "${SOCKS_BIND:-127.0.0.1}" != '0.0.0.0' ]] || { warn 'SOCKS is exposed on all interfaces'; rc=1; }
+  if [[ "${BACKEND:-}" == ssh-socks ]]; then
+    [[ "${SSH_STRICT_HOST_KEY_CHECKING:-yes}" == 'yes' ]] || { warn 'SSH host-key verification is disabled'; rc=1; }
+    [[ -n "${REMOTE_HOST:-}" ]] || { warn 'REMOTE_HOST is empty'; rc=1; }
+    [[ "${REMOTE_HOST:-}" != 'proxy.example.com' && "${REMOTE_HOST:-}" != 'your-ssh-host' ]] || { warn 'REMOTE_HOST still uses the example placeholder'; rc=1; }
+  fi
+  [[ "${SOCKS_PORT:-1080}" =~ ^[0-9]+$ && "${SOCKS_PORT:-1080}" -ge 1 && "${SOCKS_PORT:-1080}" -le 65535 ]] || { warn 'invalid SOCKS_PORT'; rc=1; }
   if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then
     [[ "$HTTP_PORT" =~ ^[0-9]+$ && "$HTTP_PORT" -ge 1 && "$HTTP_PORT" -le 65535 ]] || { warn 'invalid HTTP_PORT'; rc=1; }
     command -v privoxy >/dev/null 2>&1 || { warn 'HTTP_ENABLED=true but privoxy is missing'; rc=1; }
-    backend_capability socks5 || { warn "HTTP adapter requires backend capability: socks5"; rc=1; }
+    backend_capability socks5 || { warn 'HTTP adapter requires backend capability: socks5'; rc=1; }
   fi
   return "$rc"
 }
