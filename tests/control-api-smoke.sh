@@ -116,6 +116,15 @@ assert obj["data"]["desired_revision"] == 1
 assert obj["data"]["control"]["observed_revision"] == 1
 PY
 
+curl_unix /api/v1/events >"$TMP/events.json"
+python3 - "$TMP/events.json" <<'PY'
+import json, sys
+obj=json.load(open(sys.argv[1]))
+events=obj["data"]
+assert any(e.get("event") == "revision.created" and e.get("revision") == 1 for e in events)
+assert any(e.get("event") == "desired_state.reconciled" and e.get("revision") == 1 for e in events)
+PY
+
 conflict_status="$(curl --silent --show-error --unix-socket "$SOCKET" -o "$TMP/conflict.json" -w '%{http_code}' -H 'Content-Type: application/json' -X POST --data '{"revision":1,"if_match_revision":0}' http://localhost/api/v1/apply)"
 [[ "$conflict_status" == "409" ]]
 grep -q 'revision_conflict' "$TMP/conflict.json"
