@@ -17,6 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Normalize executable permissions
+        run: |
+          chmod 0755 bin/* install.sh integrations/*.sh backends/*.sh adapters/*.sh lib/*.sh tests/*.sh
       - name: Syntax check
         run: |
           find bin lib backends adapters integrations tests -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
@@ -35,5 +38,5 @@ jobs:
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl route 10.12.34.56
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl integration all
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl capabilities
-          PA_PROFILE_DIR=/tmp/proxy-agent/profiles true
+          PA_PROFILE_DIR=/tmp/proxy-agent/profiles bash bin/proxy-agent-profile list
           ! PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl doctor
