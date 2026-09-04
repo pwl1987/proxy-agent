@@ -5,6 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+Environment=PA_STATE_DIR=%t/proxy-agent/run/%i
+Environment=PA_LOG_DIR=%t/proxy-agent/log/%i
 ExecStart=@BIN@/proxy-ctl --profile %i run
 ExecStop=@BIN@/proxy-ctl --profile %i stop
 ExecReload=@BIN@/proxy-ctl --profile %i restart
