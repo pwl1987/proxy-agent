@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+if command -v readlink >/dev/null 2>&1; then
+  SCRIPT_PATH="$(readlink -f -- "$SCRIPT_PATH")"
+fi
+ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 # shellcheck source=../lib/common.sh
 source "$ROOT/lib/common.sh"
 # shellcheck source=../lib/profile.sh
@@ -11,7 +15,7 @@ usage() {
   cat <<'EOF'
 Usage: proxy-agent-profile <list|show|path> [name]
 
-Profiles live under PA_PROFILE_DIR (default: /etc/proxy-agent/profiles).
+Profiles live under PA_PROFILE_DIR, or under the rootless XDG config path for non-root users.
 The active profile for proxy-ctl is selected with --profile NAME.
 EOF
 }
