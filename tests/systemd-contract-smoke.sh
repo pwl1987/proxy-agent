@@ -38,6 +38,16 @@ assert_contains systemd/proxy-agent@.service 'ExecStartPre=/bin/bash @PREFIX@/bi
 assert_contains systemd/proxy-agent@.service 'ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl --profile %i run'
 assert_contains systemd/proxy-agent@.service 'User=@SERVICE_USER@'
 
+assert_contains systemd/proxy-agent-api.service 'Type=simple'
+assert_contains systemd/proxy-agent-api.service 'ExecStart=/usr/bin/python3 @PREFIX@/bin/proxy-agent-api --socket /run/proxy-agent/control.sock'
+assert_contains systemd/proxy-agent-api.service 'Environment=PA_STATE_DIR=/run/proxy-agent'
+assert_contains systemd/proxy-agent-api.service 'Environment=PA_CONFIG=/etc/proxy-agent/proxy-agent.conf'
+assert_contains systemd/proxy-agent-api.service 'User=@SERVICE_USER@'
+assert_contains systemd/proxy-agent-api.service 'Group=@SERVICE_GROUP@'
+assert_contains systemd/proxy-agent-api.service 'NoNewPrivileges=true'
+assert_contains systemd/proxy-agent-api.service 'ProtectSystem=strict'
+assert_contains systemd/proxy-agent-api.service 'ProtectHome=read-only'
+
 assert_contains systemd/proxy-agent-health.service 'User=@SERVICE_USER@'
 assert_contains systemd/proxy-agent-health@.service 'User=@SERVICE_USER@'
 assert_contains systemd/proxy-agent-health@.service 'Requires=proxy-agent@%i.service'
