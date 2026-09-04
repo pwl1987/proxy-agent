@@ -12,6 +12,26 @@ event='{"event":"test","ok":true}'
 audit_append "$event"
 [[ "$(audit_list)" == "$event" ]]
 
+# The lock must serialize concurrent appenders without losing or interleaving lines.
+for i in $(seq 1 20); do
+  ( audit_append "{\"event\":\"concurrent\",\"id\":$i}" ) &
+done
+status=0
+for pid in $(jobs -pr); do
+  if ! wait "$pid"; then status=1; fi
+done
+if (( status != 0 )); then
+  echo 'concurrent audit writer failed' >&2; exit 1
+fi
+python3 - "$(audit_file)" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as fh:
+    rows = [json.loads(line) for line in fh if line.strip()]
+assert len(rows) == 21
+ids = sorted(row["id"] for row in rows[1:])
+assert ids == list(range(1, 21))
+PY
+
 lock="$(audit_lock_dir)"
 mkdir -p "$lock"
 if audit_lock_is_stale; then
