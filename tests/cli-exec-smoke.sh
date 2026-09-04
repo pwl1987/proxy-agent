@@ -49,7 +49,7 @@ mapfile -t lines <<<"$output"
 [[ "${#lines[@]}" -eq 5 ]]
 [[ "${lines[0]}" == "http://127.0.0.1:3128" ]]
 [[ "${lines[1]}" == "http://127.0.0.1:3128" ]]
-[[ -z "${lines[2]}" ]]
+[[ "${lines[2]}" == "None" ]]
 [[ "${lines[3]}" == "127.0.0.0/8,localhost,internal.example" ]]
 [[ "${lines[4]}" == "hello world" ]]
 
