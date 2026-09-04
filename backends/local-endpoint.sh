@@ -47,3 +47,15 @@ backend_local_endpoint_endpoint() {
   backend_local_endpoint_validate
   printf '%s' "$LOCAL_PROXY_URL"
 }
+
+backend_local_endpoint_managed() {
+  return 1
+}
+
+backend_local_endpoint_pid() {
+  return 1
+}
+
+backend_local_endpoint_process_identity() {
+  return 1
+}
