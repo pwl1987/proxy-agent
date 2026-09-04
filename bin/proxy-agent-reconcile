@@ -74,16 +74,17 @@ def bootstrap_desired() -> int:
 def activate(runtime_config: Path, desired_revision: int, state_path: Path) -> dict[str, object]:
     backup = runtime_config.with_name(f".{runtime_config.name}.previous")
     had_previous = runtime_config.exists()
-    previous_source = Path(os.environ.get("PA_RUNTIME_ACTIVE_CONFIG", "/etc/proxy-agent/proxy-agent.conf"))
+    previous_source = Path(os.environ.get("PA_RUNTIME_ACTIVE_CONFIG", ""))
     if had_previous:
         shutil.copy2(runtime_config, backup)
         previous_source = backup
 
-    old_stop = run_proxy_ctl(previous_source, "stop")
-    if old_stop.returncode:
-        if backup.exists():
-            backup.unlink()
-        raise RuntimeError(old_stop.stderr.strip() or "failed to stop previous runtime")
+    if previous_source:
+        old_stop = run_proxy_ctl(previous_source, "stop")
+        if old_stop.returncode:
+            if backup.exists():
+                backup.unlink()
+            raise RuntimeError(old_stop.stderr.strip() or "failed to stop previous runtime")
 
     candidate_start = run_proxy_ctl(runtime_config, "start")
     if candidate_start.returncode:
