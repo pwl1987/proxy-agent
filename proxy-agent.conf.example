@@ -13,18 +13,26 @@ REMOTE_SSH_KEY="~/.ssh/id_ed25519"
 # Local listeners — loopback is the secure default
 SOCKS_BIND="127.0.0.1"
 SOCKS_PORT="1080"
-HTTP_ENABLED="true"
+
+# Optional HTTP adapter. Disabled by default because it adds an extra daemon.
+# When enabled, proxy-agent will generate/manage a private Privoxy instance
+# forwarding through the local SOCKS5 listener.
+HTTP_ENABLED="false"
 HTTP_BIND="127.0.0.1"
 HTTP_PORT="8118"
+PRIVOXY_CONFIG="/etc/proxy-agent/privoxy.conf"
 
 # SSH keepalive
 AUTOSSH_MONITOR_PORT="0"
 SSH_SERVER_ALIVE_INTERVAL="30"
 SSH_SERVER_ALIVE_COUNT_MAX="3"
+SSH_STRICT_HOST_KEY_CHECKING="yes"
+SSH_KNOWN_HOSTS="~/.ssh/known_hosts"
 
 # Routing policy
 DIRECT_CIDRS="127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 DIRECT_DOMAINS="localhost,.local,.cn"
+NO_PROXY_EXTRA=""
 
 # Optional application integration
 INTEGRATE_GIT="true"
@@ -35,3 +43,5 @@ INTEGRATE_NPM="false"
 # Health checks (comma separated URLs)
 HEALTH_TARGETS="https://github.com,https://pypi.org,https://registry.npmjs.org"
 HEALTH_TIMEOUT="10"
+HEALTH_RETRIES="2"
+HEALTH_BACKOFF="2"
