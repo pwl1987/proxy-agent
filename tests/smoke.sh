@@ -24,6 +24,7 @@ INTEGRATE_GIT="true"
 INTEGRATE_DOCKER="false"
 INTEGRATE_PIP="false"
 INTEGRATE_NPM="false"
+ROUTE_RULES=$'100|DIRECT|suffix|.internal.example\n200|PROXY|wildcard|*.example.net\n300|DIRECT|cidr|203.0.113.0/24'
 EOF
 
 cat >"$TMP/local-config" <<'EOF'
@@ -58,8 +59,8 @@ for file in \
   "$ROOT/bin/proxy-ctl" "$ROOT/bin/proxy-agent-health" "$ROOT/bin/proxy-agent-integration" "$ROOT/bin/proxy-agent-profile" \
   "$ROOT/bin/proxy-agent-tui" "$ROOT/install.sh" "$ROOT/adapters/privoxy.sh" "$ROOT/backends/ssh-socks.sh" \
   "$ROOT/backends/local-endpoint.sh" "$ROOT/lib/common.sh" "$ROOT/lib/profile.sh" "$ROOT/lib/backend-capabilities.sh" \
-  "$ROOT/lib/backend.sh" "$ROOT/integrations/common.sh" "$ROOT/integrations/git.sh" "$ROOT/integrations/docker.sh" \
-  "$ROOT/integrations/pip.sh" "$ROOT/integrations/npm.sh"; do
+  "$ROOT/lib/backend.sh" "$ROOT/lib/route.sh" "$ROOT/integrations/common.sh" "$ROOT/integrations/git.sh" \
+  "$ROOT/integrations/docker.sh" "$ROOT/integrations/pip.sh" "$ROOT/integrations/npm.sh"; do
   bash -n "$file"
 done
 
@@ -67,6 +68,9 @@ done
 [[ "$(run route foo.local)" == DIRECT* ]]
 [[ "$(run route 10.12.34.56)" == DIRECT* ]]
 [[ "$(run route 8.8.8.8)" == PROXY* ]]
+[[ "$(run route api.internal.example)" == DIRECT*' '* ]]
+[[ "$(run route test.example.net)" == PROXY*' '* ]]
+[[ "$(run route 203.0.113.42)" == DIRECT*' '* ]]
 [[ "$(run env | grep -c '^unset HTTP_PROXY')" -eq 1 ]]
 [[ "$(run env | grep -c '^export ALL_PROXY=')" -eq 1 ]]
 [[ "$(run capabilities | grep -c '^socks5$')" -eq 1 ]]
