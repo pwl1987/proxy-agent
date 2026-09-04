@@ -35,6 +35,13 @@ assert_contains systemd/proxy-agent-health@.service 'User=@SERVICE_USER@'
 assert_contains systemd/proxy-agent-health@.service 'Requires=proxy-agent@%i.service'
 assert_contains systemd/proxy-agent-health@.service 'ExecStart=/bin/bash @PREFIX@/bin/proxy-agent-health --profile %i'
 
+assert_contains systemd/proxy-agent-reconcile.service 'Type=oneshot'
+assert_contains systemd/proxy-agent-reconcile.service 'ExecStart=/bin/bash @PREFIX@/bin/proxy-agent-reconcile'
+assert_contains systemd/proxy-agent-reconcile.service 'User=@SERVICE_USER@'
+assert_contains systemd/proxy-agent-reconcile.service 'Environment=PA_STATE_DIR=/run/proxy-agent'
+assert_contains systemd/proxy-agent-reconcile.timer 'Unit=proxy-agent-reconcile.service'
+assert_contains systemd/proxy-agent-reconcile.timer 'OnUnitActiveSec=30s'
+
 assert_contains systemd-user/proxy-agent.service 'Type=simple'
 assert_contains systemd-user/proxy-agent.service 'ExecStart=@BIN@/proxy-ctl run'
 assert_contains systemd-user/proxy-agent.service 'Environment=PA_STATE_DIR=%t/proxy-agent/run'
