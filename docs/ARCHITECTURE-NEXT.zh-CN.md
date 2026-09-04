@@ -271,7 +271,68 @@ proxy-ctl exec <command...>
 
 让用户可以直接在代理环境中执行命令，减少手工 `eval "$(proxy-ctl env)"` 带来的操作复杂度。
 
-## 十、健康与可观测性
+## 十、AI Agent 安装与运行环境接入
+
+`proxy-agent` 应提供面向 AI Coding Agent / 自动化 Agent 的统一安装与环境接入层，但不把不同 Agent 的逻辑散落成独立代理实现。
+
+目标架构：
+
+```text
+                 proxy-agent Control Plane
+                           │
+                  Agent Environment Contract
+                           │
+        ┌──────────────────┼──────────────────┐
+        │                  │                  │
+   Claude Code           Codex         Gemini / OpenClaw
+        │                  │                  │
+        └──────────────统一代理环境─────────────┘
+```
+
+建议在 0.3.x 提供：
+
+```bash
+proxy-ctl agent install
+proxy-ctl agent status
+proxy-ctl agent env
+proxy-ctl agent env --json
+proxy-ctl agent env --shell bash
+proxy-ctl exec <command...>
+```
+
+其中：
+
+- `agent install`：安装/初始化 proxy-agent，并创建 Agent 专用 profile；不应复制另一套控制逻辑。
+- `agent env`：生成标准 `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` 环境。
+- `agent status`：检查 proxy-agent、endpoint、路由及 Agent 所需的 Git/包管理器/容器 registry 等连通性。
+- `proxy-ctl exec`：在代理环境中直接执行 Agent 或命令，减少手工 `eval`。
+- `--json`：供 Agent、脚本和编排系统稳定消费；人类 CLI/TUI 仍以中文为主。
+
+Agent 安装器只负责安装与初始化；**Control Plane 负责配置、生命周期、健康和回收**。禁止把安装脚本演变成第二个控制系统。
+
+第一阶段默认不负责管理第三方 Agent 的账号、模型 API Key 或私有凭据；这些保持由 Agent 本身或外部 Secret Provider 管理。代理侧仅提供必要的环境与 connectivity contract。
+
+推荐完整体验：
+
+```text
+proxy-ctl agent install
+        ↓
+检测平台 / 用户 / rootless
+        ↓
+安装或升级 proxy-agent
+        ↓
+创建 agent profile
+        ↓
+配置代理环境
+        ↓
+Git / package registry / container registry probes
+        ↓
+Agent Environment = READY
+```
+
+这一层的目标不是“支持某一个 AI Agent”，而是建立一个稳定的 **Agent Network Environment Contract**，后续各类 Agent 只做轻量适配。
+
+## 十一、健康与可观测性
 
 现有 health-history 已足够支撑单机运维，但下一阶段应逐步增加：
 
@@ -295,7 +356,7 @@ proxy-ctl exec <command...>
 
 其中 `/metrics` 可采用 Prometheus 文本格式，JSON API 保持给 Web/UI 使用。
 
-## 十一、Backend contract 继续演进
+## 十二、Backend contract 继续演进
 
 现有 capability 已经是正确方向，但下一版应正式版本化：
 
@@ -319,7 +380,7 @@ management
 
 这样 Web UI 可以根据 capability 自动决定显示哪些配置项，而不用写死 backend 名称。
 
-## 十二、升级系统的最终形态
+## 十三、升级系统的最终形态
 
 当前升级已具备配置保留和验证后恢复能力，但长期目标仍应改为版本目录 + 原子切换：
 
@@ -351,7 +412,7 @@ current -> 0.2.0
 
 这比覆盖原目录更适合真正的生产回滚。
 
-## 十三、推荐版本路线
+## 十四、推荐版本路线
 
 ### 0.2.0 — 已收口
 
@@ -378,6 +439,8 @@ current -> 0.2.0
 - revision/audit
 - `/status` `/health` `/metrics`
 - `proxy-ctl exec`
+- Agent Environment Contract
+- `proxy-ctl agent install/status/env`
 - TUI API client
 
 ### 0.4.x
@@ -409,7 +472,7 @@ current -> 0.2.0
 
 此时再决定核心 daemon 是否从 Shell 迁移到 Go/Rust。
 
-## 十四、Git 分支策略
+## 十五、Git 分支策略
 
 不建议重新建立长期 `develop` 分支。
 
@@ -431,7 +494,7 @@ main
 - 发布使用 tag，不建立长期 release branch。
 - 重要版本通过 release gate 决定，而不是依赖分支长期漂移。
 
-## 十五、0.2.0 收口状态
+## 十六、0.2.0 收口状态
 
 PR #15 已合并至 `main`。0.2.0 的工程基线已经冻结，后续不再向 `release-engineering` 继续追加功能。
 
@@ -451,4 +514,4 @@ GHCR image + digest
 GitHub Release
 ```
 
-下一阶段只从 `main` 创建短命 feature branch，优先实现 V3 Control API 与 Typed Config。
+下一阶段只从 `main` 创建短命 feature branch，优先实现 V3 Control API 与 Typed Config，并以 Agent Environment Contract 作为其首个面向自动化客户端的正式集成协议。
