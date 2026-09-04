@@ -201,6 +201,7 @@ cmd_integration() { exec "$ROOT/bin/proxy-agent-integration" "${1:-}"; }
 cmd_tui() { exec "$ROOT/bin/proxy-agent-tui"; }
 cmd_profiles() { exec "$ROOT/bin/proxy-agent-profile" "${1:-list}" "${2:-}"; }
 cmd_capabilities() { backend_capabilities; }
+cmd_history() { exec "$ROOT/bin/proxy-agent-health-history" "${@}"; }
 cmd_doctor() {
   local rc=0
   [[ "${SOCKS_BIND:-127.0.0.1}" != '0.0.0.0' ]] || { warn 'SOCKS is exposed on all interfaces'; rc=1; }
@@ -234,6 +235,8 @@ Usage: proxy-ctl [--profile NAME] <command>
   integration <app|all>    print application integration commands
   profiles [list|show|path] [name]
   capabilities             list backend capabilities
+  health-history [--limit N] [--json]
+                           inspect structured health event history
   tui                      open interactive terminal dashboard
 EOF
 }
@@ -252,6 +255,7 @@ case "${1:-}" in
   integration) shift; cmd_integration "${1:-}" ;;
   profiles) shift; cmd_profiles "${1:-list}" "${2:-}" ;;
   capabilities) cmd_capabilities ;;
+  health-history) shift; cmd_history "${@}" ;;
   tui) cmd_tui ;;
   *) usage; exit 2 ;;
 esac
