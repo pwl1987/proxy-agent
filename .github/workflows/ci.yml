@@ -3,6 +3,7 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   shellcheck:
@@ -92,6 +93,46 @@ jobs:
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl env
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl status --json
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl status --json=v2
+          PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl health-history --limit 1
           ! PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl doctor
       - name: Rootless installer smoke
         run: bash tests/rootless-smoke.sh
+
+  real-backends:
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - backend: sing-box
+            version: 1.13.19
+            archive: sing-box-1.13.19-linux-amd64.tar.gz
+            url: https://github.com/SagerNet/sing-box/releases/download/v1.13.19/sing-box-1.13.19-linux-amd64.tar.gz
+          - backend: mihomo
+            version: 1.19.30
+            archive: mihomo-linux-amd64-v1-v1.19.30.gz
+            url: https://github.com/MetaCubeX/mihomo/releases/download/v1.19.30/mihomo-linux-amd64-v1-v1.19.30.gz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install runtime dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends curl ca-certificates iproute2 gzip tar
+      - name: Download pinned backend
+        env:
+          BACKEND_URL: ${{ matrix.url }}
+          BACKEND_ARCHIVE: ${{ matrix.archive }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/proxy-agent-real/bin"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/proxy-agent-real/$BACKEND_ARCHIVE" "$BACKEND_URL"
+          case "${{ matrix.backend }}" in
+            sing-box)
+              tar -xzf "$RUNNER_TEMP/proxy-agent-real/$BACKEND_ARCHIVE" -C "$RUNNER_TEMP/proxy-agent-real/bin"
+              mv "$RUNNER_TEMP/proxy-agent-real/bin"/*/sing-box "$RUNNER_TEMP/proxy-agent-real/bin/sing-box"
+              ;;
+            mihomo)
+              gzip -dc "$RUNNER_TEMP/proxy-agent-real/$BACKEND_ARCHIVE" >"$RUNNER_TEMP/proxy-agent-real/bin/mihomo"
+              ;;
+          esac
+          chmod +x "$RUNNER_TEMP/proxy-agent-real/bin/${{ matrix.backend }}"
+      - name: Run real binary backend smoke
+        run: bash tests/real-backend-smoke.sh "${{ matrix.backend }}" "$RUNNER_TEMP/proxy-agent-real/bin/${{ matrix.backend }}"
