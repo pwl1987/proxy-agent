@@ -24,6 +24,14 @@ revision_lock_is_stale() {
   if ! current="$(revision_proc_starttime "$pid" 2>/dev/null)"; then return 0; fi
   [[ "$current" != "$start" ]]
 }
+revision_lock_reclaim() {
+  local lock="$(revision_lock_dir)" stale="${lock}.stale.$$.$RANDOM"
+  if mv "$lock" "$stale" 2>/dev/null; then
+    rm -rf "$stale"
+    return 0
+  fi
+  return 1
+}
 revision_lock_acquire() {
   revision_init
   local lock="$(revision_lock_dir)" now
@@ -36,7 +44,7 @@ revision_lock_acquire() {
       return 0
     fi
     if revision_lock_is_stale; then
-      rm -rf "$lock"
+      revision_lock_reclaim || true
       continue
     fi
     sleep 0.05
@@ -44,7 +52,15 @@ revision_lock_acquire() {
   printf '%s\n' "revision store is locked: $lock" >&2
   return 1
 }
-revision_lock_release() { rm -rf "$(revision_lock_dir)"; }
+revision_lock_release() {
+  local lock="$(revision_lock_dir)" pid start current
+  [[ -d "$lock" ]] || return 0
+  pid="$(cat "$lock/pid" 2>/dev/null || true)"
+  start="$(cat "$lock/starttime" 2>/dev/null || true)"
+  current="$(revision_proc_starttime "$$" 2>/dev/null || true)"
+  [[ "$pid" == "$$" && -n "$start" && "$start" == "$current" ]] || return 1
+  rm -rf "$lock"
+}
 
 revision_next_id() {
   local current=0
