@@ -15,4 +15,4 @@ jobs:
       - name: Install trace dependency
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends inotify-tools
       - name: Run revision trace
-        run: bash tests/control-api-revision-trace.sh
+        run: bash tests/control-api-revision-trace2.sh
