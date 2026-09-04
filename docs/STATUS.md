@@ -1,6 +1,6 @@
 # Current status
 
-The v2 foundation, configuration gate, runtime/lifecycle hardening gate, deployment-security gate, and runtime-consistency gate are implemented. The control plane now has explicit process ownership, atomic runtime state publication, and a hardened systemd deployment path.
+The v2 foundation, configuration gate, runtime/lifecycle hardening gate, deployment-security gate, and runtime-consistency gate are implemented. The control plane now supports both host-wide least-privilege systemd deployment and a rootless user-scoped operator deployment.
 
 Implemented:
 
@@ -25,13 +25,17 @@ Implemented:
 - configuration ownership/mode validation before shell-source evaluation
 - dedicated `proxy-agent` service account with systemd sandboxing
 - runtime/log directory isolation
+- generated Privoxy configuration moved out of `/etc`
+- rootless `install-user.sh` with XDG configuration/profile/runtime paths
+- rootless user systemd service/profile/health templates
+- symlink-safe executable path resolution for installed CLI/TUI/health entrypoints
 - CI ShellCheck + syntax + systemd contract + functional smoke coverage
 
 ## Current engineering gate
 
-The next phase is rootless/operator deployment and backend expansion preparation:
+The next phase is backend compatibility and expansion preparation:
 
-1. add rootless interactive installation without requiring a system account;
-2. define installation upgrade/migration checks for existing deployments;
-3. separate backend liveness from active network health probes;
-4. then evaluate sing-box, mihomo, and HTTP CONNECT backends against the stable contract.
+1. separate backend liveness from active network health probes;
+2. define backend adapter compatibility tests;
+3. evaluate current sing-box support against the stable lifecycle/capability contract;
+4. evaluate mihomo and HTTP CONNECT backends only after the compatibility boundary is explicit.
