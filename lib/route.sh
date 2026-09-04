@@ -63,7 +63,7 @@ route_validate_rules() {
         }
         ;;
       cidr)
-        cidr_contains 0.0.0.0 "$pattern" >/dev/null 2>&1 || {
+        valid_ipv4_cidr "$pattern" || {
           printf '[config] ERROR: ROUTE_RULES line %d has invalid CIDR: %s\n' "$line_no" "$pattern" >&2
           errors=$((errors + 1))
         }
