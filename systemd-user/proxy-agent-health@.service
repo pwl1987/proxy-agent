@@ -5,6 +5,8 @@ After=proxy-agent@%i.service
 
 [Service]
 Type=oneshot
+Environment=PA_STATE_DIR=%t/proxy-agent/run/%i
+Environment=PA_LOG_DIR=%t/proxy-agent/log/%i
 ExecStart=@BIN@/proxy-agent-health --profile %i
 NoNewPrivileges=true
 PrivateTmp=true
