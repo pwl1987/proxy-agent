@@ -14,22 +14,23 @@ require_cmd() {
 }
 
 config_file_secure() {
-  local path="$1" mode owner group group_name
+  local path="$1" mode owner owner_mode group_mode other_mode
   [[ -f "$path" ]] || return 1
   mode="$(stat -c '%a' "$path" 2>/dev/null || true)"
   owner="$(stat -c '%U' "$path" 2>/dev/null || true)"
-  group="$(stat -c '%G' "$path" 2>/dev/null || true)"
   [[ "$mode" =~ ^[0-9]+$ ]] || return 1
-  (( (10#$mode % 10) == 0 )) || return 1
-  (( ((10#$mode / 10) % 10) == 0 )) || return 1
-  group_name="$(id -gn 2>/dev/null || true)"
+  owner_mode=$((10#$mode / 100 % 10))
+  group_mode=$((10#$mode / 10 % 10))
+  other_mode=$((10#$mode % 10))
   [[ "$owner" == root || "$owner" == "$(id -un 2>/dev/null || true)" ]] || return 1
-  [[ "$group" == root || "$group" == "$group_name" ]] || return 1
+  (( owner_mode == 4 || owner_mode == 6 )) || return 1
+  (( group_mode == 0 || group_mode == 4 )) || return 1
+  (( other_mode == 0 )) || return 1
 }
 
 require_secure_config_file() {
   local path="$1"
-  config_file_secure "$path" || die "configuration file must be owner-private or group-readable without group/other write access: $path"
+  config_file_secure "$path" || die "configuration file must be owner-readable with optional group-read and no group/other write or other-read access: $path"
 }
 
 apply_config_defaults() {
