@@ -12,7 +12,8 @@
 - Dependency-light operator TUI
 - ShellCheck and functional smoke coverage
 
-## V2 control plane — substantially implemented
+## V2 control plane — completed foundation
+- Formal backend lifecycle contract ✅
 - Formal backend capability contract ✅
 - Named proxy profiles ✅
 - Profile selection from CLI and TUI ✅
@@ -22,12 +23,14 @@
 - Machine-readable `status --json` schema v1 ✅
 - Foreground backend mode for systemd ownership ✅
 - systemd `Type=simple` + control-group lifecycle ✅
+- Per-profile systemd services and health timers ✅
+- Strict configuration validation and `proxy-ctl validate` ✅
 
 ## V2 control plane — next
 - Stable status schema expansion: health timestamps, adapter details, process identity
-- Configuration validation and versioned schema
-- Per-profile systemd template units
+- Versioned configuration schema and compatibility rules
 - Stronger lifecycle ownership for every managed backend
+- Profile-safe process identity and collision detection
 
 ## V2 backends
 1. SSH SOCKS5 ✅
@@ -44,6 +47,7 @@ Every managed backend implements the same semantic lifecycle contract:
 - Container image and host/container network documentation
 - Reproducible installation and upgrade path
 - Security hardening and least-privilege service account
+- Configuration ownership/mode verification for privileged deployments
 
 ## V2 observability
 - Structured runtime state
