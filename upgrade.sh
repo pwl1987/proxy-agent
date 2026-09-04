@@ -5,6 +5,7 @@ PREFIX="${PREFIX:-/opt/proxy-agent}"
 ETC="${ETC:-/etc/proxy-agent}"
 SERVICE_USER="${SERVICE_USER:-proxy-agent}"
 SERVICE_NAME="${SERVICE_NAME:-proxy-agent.service}"
+SYSTEMD_DIR="${SYSTEMD_DIR:-/etc/systemd/system}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 [[ $EUID -eq 0 ]] || { echo 'upgrade.sh 必须以 root 身份运行' >&2; exit 1; }
@@ -20,26 +21,59 @@ backup_root="$(mktemp -d /tmp/proxy-agent-upgrade.XXXXXX)"
 cleanup_backup() { rm -rf -- "$backup_root"; }
 trap cleanup_backup EXIT
 
-if [[ -d "$PREFIX" ]]; then
-  mkdir -p "$backup_root/prefix"
-  cp -a "$PREFIX"/. "$backup_root/prefix/"
-  printf '%s\n' "$PREFIX" >"$backup_root/prefix.path"
-fi
+backup_tree() {
+  local source="$1" target="$2"
+  if [[ -d "$source" ]]; then
+    mkdir -p "$target"
+    cp -a "$source"/. "$target/"
+  fi
+}
+
+backup_tree "$PREFIX" "$backup_root/prefix"
+backup_tree "$ETC" "$backup_root/etc"
+mkdir -p "$backup_root/systemd"
+for unit in \
+  proxy-agent.service proxy-agent@.service \
+  proxy-agent-health.service proxy-agent-health@.service \
+  proxy-agent-health.timer proxy-agent-health@.timer; do
+  [[ -e "$SYSTEMD_DIR/$unit" ]] && cp -a "$SYSTEMD_DIR/$unit" "$backup_root/systemd/$unit"
+done
+
+restore_path() {
+  local target="$1" backup="$2"
+  rm -rf -- "$target"
+  if [[ -d "$backup" ]]; then
+    mkdir -p "$(dirname "$target")"
+    cp -a "$backup" "$target"
+  fi
+}
+
+restore_systemd_units() {
+  mkdir -p "$SYSTEMD_DIR"
+  for unit in \
+    proxy-agent.service proxy-agent@.service \
+    proxy-agent-health.service proxy-agent-health@.service \
+    proxy-agent-health.timer proxy-agent-health@.timer; do
+    if [[ -e "$backup_root/systemd/$unit" ]]; then
+      cp -a "$backup_root/systemd/$unit" "$SYSTEMD_DIR/$unit"
+    else
+      rm -f -- "$SYSTEMD_DIR/$unit"
+    fi
+  done
+}
 
 restore_previous() {
   printf '升级校验失败，正在恢复上一版本……\n' >&2
-  if [[ -d "$backup_root/prefix" ]]; then
-    rm -rf -- "$PREFIX"
-    mkdir -p "$(dirname "$PREFIX")"
-    cp -a "$backup_root/prefix" "$PREFIX"
-  fi
+  restore_path "$PREFIX" "$backup_root/prefix"
+  restore_path "$ETC" "$backup_root/etc"
+  restore_systemd_units
   if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || true
     if $was_active; then
       systemctl start "$SERVICE_NAME" || true
     fi
   fi
-  printf '已恢复上一版本；请检查升级日志后再重试。\n' >&2
+  printf '已恢复上一版本的程序、配置、Profile 和 systemd 单元；请检查升级日志后再重试。\n' >&2
 }
 
 if $was_active; then
