@@ -26,11 +26,20 @@
 - Per-profile systemd services and health timers ✅
 - Strict configuration validation and `proxy-ctl validate` ✅
 
-## V2 control plane — next
-- Stable status schema expansion: health timestamps, adapter details, process identity
-- Versioned configuration schema and compatibility rules
-- Stronger lifecycle ownership for every managed backend
-- Profile-safe process identity and collision detection
+## V2 runtime hardening — completed gate
+- Runtime state schema v2 via `status --json=v2` ✅
+- Health markers synchronized into runtime state ✅
+- Managed/unmanaged backend ownership contract ✅
+- Profile-safe SSH backend PID ownership ✅
+- Port collision refusal for managed SSH backend ✅
+- Long-lived `proxy-ctl run` service-manager entrypoint ✅
+- systemd lifecycle no longer depends on foreground backend environment hacks ✅
+
+## V2 runtime hardening — next
+- Configuration ownership/mode validation for privileged deployments
+- Stronger process identity verification (UID, executable, listener binding)
+- Atomic state locking and stale-state cleanup
+- Separate backend liveness from active network health probes
 
 ## V2 backends
 1. SSH SOCKS5 ✅
@@ -40,7 +49,7 @@
 5. HTTP CONNECT upstream
 
 Every managed backend implements the same semantic lifecycle contract:
-`validate/start/stop/status/endpoint/capabilities`.
+`validate/start/stop/status/endpoint/managed/pid/process_identity/capabilities`.
 
 ## V2 deployment
 - Rootless Linux execution
@@ -50,7 +59,7 @@ Every managed backend implements the same semantic lifecycle contract:
 - Configuration ownership/mode verification for privileged deployments
 
 ## V2 observability
-- Structured runtime state
-- Stable machine-readable status
-- Health history and recovery events
+- Structured runtime state ✅
+- Stable machine-readable status ✅
+- Health history and recovery events ✅
 - TUI consumes the same state model
