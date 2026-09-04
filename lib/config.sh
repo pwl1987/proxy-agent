@@ -113,13 +113,15 @@ config_validate_core() {
   if [[ -n "${DIRECT_CIDRS:-}" ]]; then
     IFS=',' read -r -a cidrs <<< "$DIRECT_CIDRS"
     for cidr in "${cidrs[@]}"; do
-      cidr_contains "0.0.0.0" "$cidr" >/dev/null 2>&1 || config_error "DIRECT_CIDRS contains invalid CIDR: $cidr"
+      valid_ipv4_cidr "$cidr" || config_error "DIRECT_CIDRS contains invalid CIDR: $cidr"
     done
   fi
   config_validate_domains DIRECT_DOMAINS "${DIRECT_DOMAINS:-}"
   config_validate_list NO_PROXY_EXTRA "${NO_PROXY_EXTRA:-}"
   config_validate_targets HEALTH_TARGETS "${HEALTH_TARGETS:-}"
-  route_validate_rules || CONFIG_ERRORS=$((CONFIG_ERRORS + 1))
+  local route_errors=0
+  route_validate_rules || route_errors=$?
+  CONFIG_ERRORS=$((CONFIG_ERRORS + route_errors))
 }
 
 config_validate_backend_fields() {
