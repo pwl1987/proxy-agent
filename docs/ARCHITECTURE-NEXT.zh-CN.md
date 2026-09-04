@@ -1,6 +1,6 @@
 # proxy-agent 下一阶段架构设计
 
-本文不是立即重写清单，而是冻结下一阶段的架构方向，避免继续在 Shell CLI 上无限堆功能。
+本文冻结下一阶段架构方向，避免继续在 Shell CLI 上无限堆功能。0.2.0 作为 Linux reference implementation 正式收口；后续功能通过控制协议逐步演进。
 
 ## 一、结论
 
@@ -35,7 +35,7 @@
 
 ## 二、为什么现在不直接重写
 
-当前 Shell 实现已经把真正重要的领域模型暴露出来了：
+当前 Shell 实现已经把真正重要的领域模型暴露出来：
 
 - backend lifecycle
 - capabilities
@@ -52,7 +52,7 @@
 
 因此采用“**先协议化，再替换实现**”策略：
 
-1. 0.2.x：继续维护 Shell reference implementation。
+1. 0.2.x：维护 Shell reference implementation。
 2. 0.3.x：定义本地 control API 与 typed config model。
 3. 0.4.x：CLI/TUI 优先切到 API；Shell 保留兼容入口。
 4. 0.5.x 以后：根据跨平台需求决定是否把 daemon 核心迁移到 Go/Rust。
@@ -240,7 +240,7 @@ SSH、VPN、Tailscale、反向代理等都可以作为远程管理的安全通�
 
 第三阶段再决定是否提供原生 daemon。
 
-如果确实需要单文件跨平台 daemon，届时优先评估 Go/Rust；Go 的纯 Go 程序可直接通过 `GOOS/GOARCH` 交叉编译，因此尤其适合这一类控制面工具。
+如果确实需要单文件跨平台 daemon，届时优先评估 Go/Rust；当前不为了“跨平台”而复制三套生命周期实现。
 
 ## 九、CLI/TUI 的升级方向
 
@@ -321,9 +321,7 @@ management
 
 ## 十二、升级系统的最终形态
 
-当前升级已经有失败恢复逻辑，但仍是“覆盖式安装”。
-
-长期目标应改为版本目录 + 原子切换：
+当前升级已具备配置保留和验证后恢复能力，但长期目标仍应改为版本目录 + 原子切换：
 
 ```text
 /opt/proxy-agent/releases/0.2.0
@@ -355,19 +353,19 @@ current -> 0.2.0
 
 ## 十三、推荐版本路线
 
-### 0.2.0
+### 0.2.0 — 已收口
 
 目标：稳定 Linux reference implementation。
 
-必须完成：
+已完成：
 
 - CI 全绿
-- container smoke
-- real backend smoke
-- release tag
-- GHCR image
-- rollback gate
-- 中文运维文档
+- container runtime gate
+- backend compatibility baseline
+- release workflow
+- rollback policy
+- 中文 CLI/TUI/运维文档
+- main 合并基线
 
 ### 0.3.x
 
@@ -429,34 +427,28 @@ main
 
 - `main` 永远可发布。
 - feature branch 短命。
-- PR 合并后自动删除 branch。
+- PR 合并后删除 branch。
 - 发布使用 tag，不建立长期 release branch。
 - 重要版本通过 release gate 决定，而不是依赖分支长期漂移。
 
-GitHub 官方支持通过 branch protection / ruleset 要求 PR、状态检查、分支最新、线性历史等；在高并发协作时再引入 merge queue。
+## 十五、0.2.0 收口状态
 
-## 十五、当前 Merge 决策
+PR #15 已合并至 `main`。0.2.0 的工程基线已经冻结，后续不再向 `release-engineering` 继续追加功能。
 
-PR #15 现在**不要立即合并**。
-
-原因不是架构方向错误，而是最新 PR CI 的 container gate 刚发现了真实运行时问题，已经修复一次，还需要等待新的 CI 证明修复有效。
-
-正确顺序：
+发布闭环：
 
 ```text
-Container CI green
+0.2.0 main baseline
       ↓
-全套 PR checks green
+CI green
       ↓
-确认 real backend smoke
-      ↓
-合并 PR #15 → main
-      ↓
-删除 feat/release-engineering
-      ↓
-main 上验证 v0.2.0 release candidate
+merge #15
       ↓
 tag v0.2.0
+      ↓
+GHCR image + digest
+      ↓
+GitHub Release
 ```
 
-这一步完成后，不再把 `feat/release-engineering` 当长期开发主线。
+下一阶段只从 `main` 创建短命 feature branch，优先实现 V3 Control API 与 Typed Config。
