@@ -197,6 +197,49 @@ cmd_env() {
   fi
   printf 'export NO_PROXY=%q no_proxy=%q\n' "$no_proxy" "$no_proxy"
 }
+cmd_exec() {
+  local mode='on'
+  if [[ "${1:-}" == '--off' ]]; then
+    mode='off'
+    shift
+  fi
+  [[ "$#" -gt 0 ]] || die '用法：proxy-ctl exec [--off] <命令> [参数]'
+
+  local no_proxy="${DIRECT_CIDRS:-}"
+  [[ -z "${DIRECT_DOMAINS:-}" ]] || no_proxy="${no_proxy:+${no_proxy},}${DIRECT_DOMAINS}"
+  [[ -z "${NO_PROXY_EXTRA:-}" ]] || no_proxy="${no_proxy:+${no_proxy},}${NO_PROXY_EXTRA}"
+
+  if [[ "$mode" == 'off' ]]; then
+    env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy -- "$@"
+    return $?
+  fi
+
+  local endpoint http_proxy_value https_proxy_value all_proxy_value
+  endpoint="$(backend_endpoint)"
+  http_proxy_value=''
+  https_proxy_value=''
+  all_proxy_value=''
+
+  if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then
+    http_proxy_value="http://${HTTP_BIND}:${HTTP_PORT}"
+    https_proxy_value="$http_proxy_value"
+  elif backend_capability http_native >/dev/null 2>&1; then
+    http_proxy_value="$endpoint"
+    https_proxy_value="$endpoint"
+  fi
+  if backend_capability socks5 >/dev/null 2>&1; then
+    all_proxy_value="$endpoint"
+  fi
+
+  env \
+    ${http_proxy_value:+HTTP_PROXY="$http_proxy_value"} \
+    ${https_proxy_value:+HTTPS_PROXY="$https_proxy_value"} \
+    ${all_proxy_value:+ALL_PROXY="$all_proxy_value"} \
+    ${http_proxy_value:+http_proxy="$http_proxy_value"} \
+    ${https_proxy_value:+https_proxy="$https_proxy_value"} \
+    ${all_proxy_value:+all_proxy="$all_proxy_value"} \
+    NO_PROXY="$no_proxy" no_proxy="$no_proxy" -- "$@"
+}
 cmd_integration() { exec "$ROOT/bin/proxy-agent-integration" "${1:-}"; }
 cmd_tui() { exec "$ROOT/bin/proxy-agent-tui"; }
 cmd_profiles() { exec "$ROOT/bin/proxy-agent-profile" "${1:-list}" "${2:-}"; }
@@ -261,6 +304,7 @@ usage() {
   doctor                      检查不安全或不一致的配置
   route <主机名或IPv4>        解释有序分流策略
   env [--off]                 输出 shell 代理环境变量命令
+  exec [--off] <命令> [参数]  在代理环境中执行命令（不使用 eval）
   integration <应用|all>     输出应用集成配置
   profiles [list|show|path] [名称]
                               查看配置档案
@@ -285,6 +329,7 @@ case "${1:-}" in
   doctor) cmd_doctor ;;
   route) shift; route_explain "${1:-}" ;;
   env) shift; cmd_env "${1:-}" ;;
+  exec) shift; cmd_exec "$@" ;;
   integration) shift; cmd_integration "${1:-}" ;;
   profiles) shift; cmd_profiles "${1:-list}" "${2:-}" ;;
   capabilities) cmd_capabilities ;;
