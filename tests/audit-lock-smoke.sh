@@ -12,9 +12,9 @@ event='{"event":"test","ok":true}'
 audit_append "$event"
 [[ "$(audit_list)" == "$event" ]]
 
-# The lock must serialize concurrent appenders without losing or interleaving lines.
+# The lock must serialize independent concurrent appenders without losing or interleaving lines.
 for i in $(seq 1 20); do
-  ( audit_append "{\"event\":\"concurrent\",\"id\":$i}" ) &
+  bash -c 'source "$1/lib/audit-store.sh"; audit_append "{\"event\":\"concurrent\",\"id\":$2}"' _ "$ROOT" "$i" &
 done
 status=0
 for pid in $(jobs -pr); do
