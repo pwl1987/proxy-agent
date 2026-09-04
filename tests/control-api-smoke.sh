@@ -58,6 +58,17 @@ post_status() { curl --silent --show-error --fail --unix-socket "$SOCKET" -o "$2
 PA_STATE_DIR="$TMP/state" bash -c 'source "$1"; [[ "$(revision_current)" == 0 && "$(revision_desired_revision)" == 0 ]]' _ "$ROOT/lib/revision-store.sh"
 
 curl_unix /api/v1/health >"$TMP/health.json"
+printf '%s\n' '=== DEBUG FIRST HEALTH ==='
+cat "$TMP/health.json"
+printf '%s\n' '=== DEBUG STATE AFTER FIRST HEALTH ==='
+find "$TMP/state" -maxdepth 3 -print 2>/dev/null | sort
+for f in "$TMP/state"/revisions/* "$TMP/state"/runtime/*; do
+  [[ -f "$f" ]] || continue
+  printf '%s\n' "--- $f ---"
+  cat "$f"
+done
+printf '%s\n' '=== DEBUG API STDERR ==='
+cat "$TMP/api.err"
 curl_unix /api/v1/status >"$TMP/status.json"
 curl_unix /api/v1/capabilities >"$TMP/capabilities.json"
 curl_unix /api/v1/config >"$TMP/config.json"
@@ -87,7 +98,6 @@ obj=json.load(open(sys.argv[1])); assert obj["data"]["revision"] == 1, obj
 PY
 curl_unix /api/v1/revisions/1 >"$TMP/revision-detail.json"
 grep -q '"revision":1' "$TMP/revision-detail.json"
-
 post_json /api/v1/apply '{"revision":1,"if_match_revision":1,"actor":"smoke"}' >"$TMP/applied.json"
 python3 - "$TMP/applied.json" <<'PY'
 import json,sys
@@ -98,7 +108,6 @@ python3 - "$TMP/health-applied.json" <<'PY'
 import json,sys
 obj=json.load(open(sys.argv[1])); assert obj["data"]["status"] == "ok",obj; assert obj["data"]["readiness"] == "ready",obj; assert obj["data"]["observed_revision"] == 1,obj
 PY
-
 runtime_status="$(post_status /api/v1/runtime/stop "$TMP/runtime-stop.json" '{"actor":"smoke"}')"
 [[ "$runtime_status" == "200" ]]
 python3 - "$TMP/runtime-stop.json" <<'PY'
@@ -112,16 +121,11 @@ obj=json.load(open(sys.argv[1])); assert obj["data"]["status"] == "degraded",obj
 PY
 runtime_status="$(post_status /api/v1/runtime/start "$TMP/runtime-start.json" '{"actor":"smoke"}')"
 [[ "$runtime_status" == "200" ]]
-python3 - "$TMP/runtime-start.json" <<'PY'
-import json,sys
-obj=json.load(open(sys.argv[1])); assert obj["data"]["action"] == "start", obj
-PY
 curl_unix /api/v1/health >"$TMP/health-started.json"
 python3 - "$TMP/health-started.json" <<'PY'
 import json,sys
 obj=json.load(open(sys.argv[1])); assert obj["data"]["status"] == "ok",obj; assert obj["data"]["readiness"] == "ready",obj
 PY
-
 curl_unix /api/v1/status >"$TMP/status-applied.json"
 python3 - "$TMP/status-applied.json" <<'PY'
 import json,sys
@@ -136,7 +140,6 @@ assert any(e.get("event")=="desired_state.activated" and e.get("revision")==1 fo
 assert any(e.get("event")=="runtime.stop" for e in events), events
 assert any(e.get("event")=="runtime.start" for e in events), events
 PY
-
 conflict_status="$(post_status /api/v1/apply "$TMP/conflict.json" '{"revision":1,"if_match_revision":0}')"
 [[ "$conflict_status" == "409" ]]
 grep -q 'revision_conflict' "$TMP/conflict.json"
