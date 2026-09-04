@@ -73,6 +73,7 @@ done
 
 source "$ROOT/lib/common.sh"
 source "$ROOT/lib/route.sh"
+source "$ROOT/lib/state.sh"
 [[ "$(route_explain 'API.Example.Net')" == PROXY* ]]
 valid_ipv4_cidr "10.0.0.0/8"
 valid_ipv4_cidr "172.16.0.0/12"
@@ -81,6 +82,19 @@ valid_ipv4_cidr "192.168.0.0/16"
 ! valid_ipv4_cidr "10.0.0.0/33"
 ! cidr_contains "999.1.1.1" "10.0.0.0/8"
 [[ "$(route_explain "10.12.34.56")" == PROXY* ]]
+
+PA_STATE_DIR="$TMP/lock-state"
+state_lock_acquire
+[[ -d "$PA_STATE_DIR/.state.lock" ]]
+state_lock_release
+[[ ! -d "$PA_STATE_DIR/.state.lock" ]]
+mkdir -p "$PA_STATE_DIR/.state.lock"
+printf '999999\n' >"$PA_STATE_DIR/.state.lock/pid"
+printf '0\n' >"$PA_STATE_DIR/.state.lock/created"
+printf '0\n' >"$PA_STATE_DIR/.state.lock/starttime"
+state_lock_acquire
+state_lock_release
+! listener_owned "127.0.0.1" "1" "999999"
 
 [[ "$(run route example.cn)" == DIRECT* ]]
 [[ "$(run route foo.local)" == DIRECT* ]]
@@ -109,6 +123,7 @@ valid_ipv4_cidr "192.168.0.0/16"
 [[ "$(run_integration git | grep -c 'git config --global http.proxy')" -eq 1 ]]
 [[ "$(run_integration docker 2>/dev/null)" == *disabled* ]] || true
 [[ "$(grep -c '^Type=simple$' "$ROOT/systemd/proxy-agent.service")" -eq 1 ]]
+[[ "$(grep -c '^ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl run$' "$ROOT/systemd/proxy-agent.service")" -eq 1 ]]
 [[ "$(grep -c '^User=@SERVICE_USER@$' "$ROOT/systemd/proxy-agent.service")" -eq 1 ]]
 [[ "$(grep -c '^Group=@SERVICE_GROUP@$' "$ROOT/systemd/proxy-agent.service")" -eq 1 ]]
 [[ "$(grep -c '^ProtectSystem=strict$' "$ROOT/systemd/proxy-agent.service")" -eq 1 ]]
