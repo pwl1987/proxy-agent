@@ -41,7 +41,10 @@ backend_ssh_socks_start() {
     monitor=(-M 0)
   fi
 
-  AUTOSSH_GATETIME=0 autossh -f -N \
+  local background=(-f)
+  [[ "${PA_FOREGROUND:-false}" == "true" ]] && background=()
+
+  AUTOSSH_GATETIME=0 autossh "${background[@]}" -N \
     "${monitor[@]}" \
     -o BatchMode=yes \
     -o ExitOnForwardFailure=yes \
