@@ -66,6 +66,9 @@ revisions = json.loads((root / "revisions0.json").read_text())
 metrics = (root / "metrics.txt").read_text()
 assert health == {"api_version": "v1", "data": {"status": "ok", "transport": "ready"}, "kind": "health"}
 assert status["data"]["backend"] == "local-endpoint"
+assert status["data"]["current_revision"] == 0
+assert status["data"]["desired_revision"] == 0
+assert status["data"]["control"]["observed_revision"] == 0
 assert caps["data"]["backend"] == "local-endpoint"
 assert caps["data"]["capabilities"] == ["http_native", "stream_proxy"]
 assert config["data"]["schema_version"] == 1
@@ -85,6 +88,15 @@ assert obj["kind"] == "revision"
 assert obj["data"]["revision"] == 1
 PY
 
+curl_unix /api/v1/revisions/1 >"$TMP/revision-detail.json"
+python3 - "$TMP/revision-detail.json" <<'PY'
+import json, sys
+obj=json.load(open(sys.argv[1]))
+assert obj["kind"] == "revision"
+assert obj["data"]["revision"] == 1
+assert obj["data"]["actor"] == "smoke"
+PY
+
 post_json /api/v1/apply '{"revision":1,"if_match_revision":1,"actor":"smoke"}' >"$TMP/applied.json"
 python3 - "$TMP/applied.json" <<'PY'
 import json, sys
@@ -94,6 +106,14 @@ assert obj["data"]["revision"] == 1
 assert obj["data"]["desired_revision"] == 1
 assert obj["data"]["reconcile"]["status"] == "projected"
 assert obj["data"]["reconcile"]["observed_revision"] == 1
+PY
+
+curl_unix /api/v1/status >"$TMP/status-applied.json"
+python3 - "$TMP/status-applied.json" <<'PY'
+import json, sys
+obj=json.load(open(sys.argv[1]))
+assert obj["data"]["desired_revision"] == 1
+assert obj["data"]["control"]["observed_revision"] == 1
 PY
 
 conflict_status="$(curl --silent --show-error --unix-socket "$SOCKET" -o "$TMP/conflict.json" -w '%{http_code}' -H 'Content-Type: application/json' -X POST --data '{"revision":1,"if_match_revision":0}' http://localhost/api/v1/apply)"
