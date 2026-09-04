@@ -41,14 +41,11 @@ jobs:
         run: bash tests/backend-capability-manifest-smoke.sh
       - name: Control plane schema smoke
         run: bash tests/control-plane-schema-smoke.sh
-      - name: DEBUG Control API preflight
+      - name: DEBUG Control API strace
         run: |
-          printf '%s\n' '=== PA_* environment ==='
-          env | grep '^PA_' | sort || true
-          printf '%s\n' '=== /run/proxy-agent ==='
-          find /run/proxy-agent -maxdepth 3 -print 2>/dev/null | sort || true
-          printf '%s\n' '=== relevant processes ==='
-          ps -eo pid,ppid,args | grep -E 'proxy-agent|proxy-ctl' | grep -v grep || true
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends strace
+          bash tests/control-api-strace.sh
       - name: Control API smoke
         run: bash tests/control-api-smoke.sh
       - name: Control API error-path smoke
