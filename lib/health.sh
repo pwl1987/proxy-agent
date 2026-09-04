@@ -5,6 +5,33 @@ health_markers_dir() {
   printf '%s' "$(state_dir)"
 }
 
+health_history_file() {
+  printf '%s/health-history.jsonl' "$(health_markers_dir)"
+}
+
+health_json_quote() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\n'/\\n}"
+  value="${value//$'\r'/\\r}"
+  value="${value//$'\t'/\\t}"
+  printf '"%s"' "$value"
+}
+
+health_record_event() {
+  local result="$1" network="$2" detail="${3:-}" ts
+  ts="$(date +%s)"
+  mkdir -p "$(health_markers_dir)"
+  printf '{"timestamp":%s,"profile":%s,"backend":%s,"result":%s,"network":%s,"detail":%s}\n' \
+    "$ts" \
+    "$(health_json_quote "${PA_ACTIVE_PROFILE:-default}")" \
+    "$(health_json_quote "${BACKEND:-unknown}")" \
+    "$(health_json_quote "$result")" \
+    "$(health_json_quote "$network")" \
+    "$(health_json_quote "$detail")" >>"$(health_history_file)"
+}
+
 health_clear_markers() {
   local dir
   dir="$(health_markers_dir)"
@@ -20,15 +47,18 @@ health_mark() {
     healthy)
       rm -f "$dir/unhealthy" "$dir/recovered"
       printf '%s\n' "$ts" >"$dir/healthy"
+      health_record_event healthy checked 'liveness/network check passed'
       ;;
     unhealthy)
       rm -f "$dir/healthy" "$dir/recovered"
       printf '%s\n' "$ts" >"$dir/unhealthy"
+      health_record_event unhealthy failed 'health check failed'
       ;;
     recovered)
       rm -f "$dir/unhealthy"
       printf '%s\n' "$ts" >"$dir/healthy"
       printf '%s\n' "$ts" >"$dir/recovered"
+      health_record_event recovered checked 'automatic backend recovery succeeded'
       ;;
     *)
       return 2

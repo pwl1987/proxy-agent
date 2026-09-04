@@ -79,7 +79,7 @@ route_validate_rules() {
 
 route_explain() {
   local host="${1,,}" line priority action matcher pattern
-  [[ -n "$host" ]] || { printf 'PROXY   (empty host)\n'; return 0; }
+  [[ -n "$host" ]] || { printf '代理   （主机名为空）\n'; return 0; }
   local -a rules=()
   if [[ -n "${ROUTE_RULES:-}" ]]; then
     while IFS= read -r line; do
@@ -87,7 +87,7 @@ route_explain() {
       if route_rule_line "$line" >/dev/null; then
         rules+=("$line")
       else
-        warn "ignoring invalid ROUTE_RULES entry: $line"
+        warn "忽略无效的 ROUTE_RULES 规则：$line"
       fi
     done <<< "${ROUTE_RULES}"
   fi
@@ -95,7 +95,11 @@ route_explain() {
   if ((${#rules[@]})); then
     while IFS=$'\t' read -r priority action matcher pattern; do
       if route_rule_match "$host" "$matcher" "$pattern"; then
-        printf '%s  %s  (rule %s: %s %s)\n' "$action" "$host" "$priority" "$matcher" "$pattern"
+        if [[ "$action" == DIRECT ]]; then
+          printf '直连  %s  （规则 %s：%s %s）\n' "$host" "$priority" "$matcher" "$pattern"
+        else
+          printf '代理  %s  （规则 %s：%s %s）\n' "$host" "$priority" "$matcher" "$pattern"
+        fi
         return 0
       fi
     done < <(printf '%s\n' "${rules[@]}" | while IFS= read -r rule; do route_rule_line "$rule"; done | sort -n -k1,1)
@@ -108,7 +112,7 @@ route_explain() {
     item="${item,,}"
     [[ -n "$item" ]] || continue
     if [[ "$host" == "$item" || "$host" == *".$item" ]]; then
-      printf 'DIRECT  %s  (legacy domain policy: %s)\n' "$host" "$item"
+      printf '直连  %s  （兼容域名策略：%s）\n' "$host" "$item"
       return 0
     fi
   done
@@ -117,10 +121,10 @@ route_explain() {
   for item in "${items[@]}"; do
     [[ -n "$item" ]] || continue
     if cidr_contains "$host" "$item"; then
-      printf 'DIRECT  %s  (legacy CIDR policy: %s)\n' "$host" "$item"
+      printf '直连  %s  （兼容 CIDR 策略：%s）\n' "$host" "$item"
       return 0
     fi
   done
 
-  printf 'PROXY   %s  (default route)\n' "$host"
+  printf '代理  %s  （默认策略）\n' "$host"
 }

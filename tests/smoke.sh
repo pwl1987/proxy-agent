@@ -78,14 +78,14 @@ source "$ROOT/lib/state.sh"
 source "$ROOT/lib/health.sh"
 apply_config_defaults
 [[ "$HEALTH_NETWORK_REQUIRED" == false ]]
-[[ "$(route_explain 'API.Example.Net')" == PROXY* ]]
+[[ "$(route_explain 'API.Example.Net')" == 代理* ]]
 valid_ipv4_cidr "10.0.0.0/8"
 valid_ipv4_cidr "172.16.0.0/12"
 valid_ipv4_cidr "192.168.0.0/16"
 ! valid_ipv4_cidr "999.1.1.1/8"
 ! valid_ipv4_cidr "10.0.0.0/33"
 ! cidr_contains "999.1.1.1" "10.0.0.0/8"
-[[ "$(route_explain "10.12.34.56")" == PROXY* ]]
+[[ "$(route_explain "10.12.34.56")" == 代理* ]]
 
 PA_STATE_DIR="$TMP/lock-state"
 state_lock_acquire
@@ -100,12 +100,12 @@ state_lock_acquire
 state_lock_release
 ! listener_owned "127.0.0.1" "1" "999999"
 
-[[ "$(run route example.cn)" == DIRECT* ]]
-[[ "$(run route foo.local)" == DIRECT* ]]
-[[ "$(run route 10.12.34.56)" == DIRECT* ]]
-[[ "$(run route service.internal.example)" == DIRECT* ]]
-[[ "$(run route api.example.net)" == PROXY* ]]
-[[ "$(run route 8.8.8.8)" == PROXY* ]]
+[[ "$(run route example.cn)" == 直连* ]]
+[[ "$(run route foo.local)" == 直连* ]]
+[[ "$(run route 10.12.34.56)" == 直连* ]]
+[[ "$(run route service.internal.example)" == 直连* ]]
+[[ "$(run route api.example.net)" == 代理* ]]
+[[ "$(run route 8.8.8.8)" == 代理* ]]
 [[ "$(run env | grep -c '^unset HTTP_PROXY')" -eq 1 ]]
 [[ "$(run env | grep -c '^export ALL_PROXY=')" -eq 1 ]]
 [[ "$(run capabilities | grep -c '^socks5$')" -eq 1 ]]
@@ -119,9 +119,9 @@ state_lock_release
 [[ "$(run_local status --json=v2 | grep -c '"managed":false')" -eq 1 ]]
 [[ "$(run_local status --json=v2 | grep -c '"type":"none"')" -eq 1 ]]
 [[ "$(run_local capabilities | grep -c '^socks5$')" -eq 1 ]]
-[[ "$(run_local diagnose | grep -c '^OK    curl$')" -eq 1 ]]
-[[ "$(run_profile status | grep -c 'profile: work')" -eq 1 ]]
-[[ "$(run_profile status | grep -c 'remote: proxy@profile.example:22')" -eq 1 ]]
+[[ "$(run_local diagnose | grep -c '^正常  curl$')" -eq 1 ]]
+[[ "$(run_profile status | grep -c '配置档案: work')" -eq 1 ]]
+[[ "$(run_profile status | grep -c '远端: proxy@profile.example:22')" -eq 1 ]]
 [[ "$(run_profile_inspect list | grep -c '^work$')" -eq 1 ]]
 [[ "$(run_profile_inspect show work | grep -c 'REMOTE_SSH_KEY=\"<redacted>\"')" -eq 1 ]]
 [[ "$(run_integration git | grep -c 'git config --global http.proxy')" -eq 1 ]]

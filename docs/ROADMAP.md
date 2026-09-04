@@ -54,10 +54,56 @@
 - mihomo ✅
 - HTTP CONNECT upstream ✅
 
-## V2 release engineering — next
-- Versioned 0.2.x release/tag
-- Reproducible container image build/publish and digest capture
-- Real-binary optional CI matrix for sing-box/mihomo
-- Structured operational telemetry and health-history inspection
-- Host/container networking deployment patterns
-- Upgrade rollback strategy and compatibility policy
+## V2 release engineering — in progress
+- Tag-driven release workflow with VERSION/tag consistency gate ✅
+- Non-root container build and GHCR publish workflow ✅
+- Published image digest capture ✅
+- GitHub release generation ✅
+- Versioned 0.2.x release/tag ⏳
+- Real-binary CI matrix for sing-box/mihomo ⏳
+- Structured operational telemetry and health-history inspection ✅
+- Host/container networking deployment patterns ✅
+- Upgrade rollback verification and compatibility policy ✅
+- Container runtime CI execution gate ⏳
+
+## V3 control API — planned
+- Typed configuration schema
+- Local control API over Unix socket / loopback HTTP
+- Desired state vs observed state
+- Config revision and optimistic concurrency
+- Audit events
+- `proxy-ctl exec`
+- Capability-versioned backend metadata
+- TUI converted from CLI subprocess client to API client
+
+## V4 Web control plane — planned
+- Chinese Web UI by default
+- Profile/backend/adapter forms driven by capability metadata
+- Draft → Validate → Diff → Apply workflow
+- Health dashboard and event history
+- Rollback to previous configuration revision
+- Logs and diagnostics viewer
+- Local-only binding by default
+- Explicitly enabled remote management with authentication
+- Secret references without exposing private keys in the UI
+
+## V5 Cross-platform — planned
+- macOS runtime adapter (`launchd`)
+- Windows runtime adapter (Windows Service)
+- Platform-specific installers
+- Linux / macOS / Windows CI matrix
+- Shared control API and identical CLI semantics
+- Container runtime retained as a universal deployment path
+
+## V6 Production control-plane — target
+- Versioned stable API
+- Versioned/atomic installation tree
+- Metrics endpoint
+- Signed/provenance-backed release artifacts
+- SBOM and image attestation
+- Backup/restore and fleet-ready configuration export
+- Compatibility policy for old configuration revisions
+
+## Architecture rule
+
+Do not continue adding large amounts of imperative behavior directly to `proxy-ctl`. Keep the current Shell implementation as the Linux reference implementation while introducing typed configuration and a local control API. Replace the implementation language only after the behavioral contract is frozen.

@@ -9,14 +9,14 @@ ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 source "$ROOT/lib/common.sh"
 PROFILE_NAME="${PA_PROFILE:-}"
 if [[ "${1:-}" == "--profile" ]]; then
-  [[ -n "${2:-}" ]] || { echo 'usage: proxy-agent-tui [--profile NAME]' >&2; exit 2; }
+  [[ -n "${2:-}" ]] || { echo '用法: proxy-agent-tui [--profile 名称]' >&2; exit 2; }
   PROFILE_NAME="$2"
   shift 2
 fi
-[[ $# -eq 0 ]] || { echo 'usage: proxy-agent-tui [--profile NAME]' >&2; exit 2; }
+[[ $# -eq 0 ]] || { echo '用法: proxy-agent-tui [--profile 名称]' >&2; exit 2; }
 
-[[ -t 0 && -t 1 ]] || { echo 'proxy-agent-tui requires an interactive terminal' >&2; exit 1; }
-command -v tput >/dev/null 2>&1 || { echo 'proxy-agent-tui requires tput' >&2; exit 1; }
+[[ -t 0 && -t 1 ]] || { echo '错误：proxy-agent-tui 需要交互式终端' >&2; exit 1; }
+command -v tput >/dev/null 2>&1 || { echo '错误：proxy-agent-tui 需要 tput' >&2; exit 1; }
 
 build_cli() {
   CLI=("$ROOT/bin/proxy-ctl")
@@ -43,68 +43,103 @@ trap cleanup EXIT INT TERM
 tput smcup
 tput civis
 
+action_label() {
+  case "$1" in
+    start) printf '启动' ;;
+    stop) printf '停止' ;;
+    restart) printf '重启' ;;
+    test) printf '连通性测试' ;;
+    diagnose) printf '诊断' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
 run_action() {
   local action="$1"
   tput cup 0 0; tput ed
-  printf 'proxy-agent action: %s%s\n\n' "$action" "${PROFILE_NAME:+ (profile: $PROFILE_NAME)}"
-  if "${CLI[@]}" "$action"; then printf '\nAction completed. Press any key to return.\n'; else printf '\nAction failed. Press any key to return.\n'; fi
+  printf 'proxy-agent 操作：%s%s\n\n' "$(action_label "$action")" "${PROFILE_NAME:+（配置档案：$PROFILE_NAME）}"
+  if "${CLI[@]}" "$action"; then
+    printf '\n操作完成。按任意键返回。\n'
+  else
+    printf '\n操作失败。按任意键返回。\n'
+  fi
   read -rsn1
 }
 
 health_summary() {
-  local dir state='UNKNOWN'
+  local dir state='未知'
   dir="$(state_dir)"
-  if [[ -f "$dir/recovered" ]]; then state='RECOVERED'; elif [[ -f "$dir/healthy" ]]; then state='HEALTHY'; elif [[ -f "$dir/unhealthy" ]]; then state='UNHEALTHY'; fi
+  if [[ -f "$dir/recovered" ]]; then state='已恢复'; elif [[ -f "$dir/healthy" ]]; then state='正常'; elif [[ -f "$dir/unhealthy" ]]; then state='异常'; fi
   printf '%s' "$state"
+}
+
+translate_status_line() {
+  local line="$1"
+  case "$line" in
+    'proxy-agent') printf 'proxy-agent' ;;
+    '  backend: listening') printf '  后端状态: 正常监听' ;;
+    '  backend: not listening') printf '  后端状态: 未监听' ;;
+    '  HTTP:     listening') printf '  HTTP状态:  正常监听' ;;
+    '  HTTP:     not listening') printf '  HTTP状态:  未监听' ;;
+    '  HTTP:     disabled') printf '  HTTP状态:  已禁用' ;;
+    '  endpoint: '*) printf '  endpoint:  %s' "${line#'  endpoint: '}" ;;
+    '  remote: '*) printf '  远端:      %s' "${line#'  remote: '}" ;;
+    '  profile: '*) printf '  配置档案:  %s' "${line#'  profile: '}" ;;
+    '  backend: '*) printf '  后端:      %s' "${line#'  backend: '}" ;;
+    *) printf '%s' "$line" ;;
+  esac
 }
 
 render() {
   local width now status health route_info profile_label line
   width="$(cols)"; now="$(date '+%Y-%m-%d %H:%M:%S')"
-  status="$("${CLI[@]}" status 2>/dev/null || printf 'proxy-agent status unavailable')"
-  health="$(health_summary)"; route_info="$("${CLI[@]}" route github.com 2>/dev/null || printf 'UNKNOWN')"
-  profile_label="${PROFILE_NAME:-default}"
+  status="$("${CLI[@]}" status 2>/dev/null || printf 'proxy-agent 状态不可用')"
+  health="$(health_summary)"; route_info="$("${CLI[@]}" route github.com 2>/dev/null || printf '未知')"
+  profile_label="${PROFILE_NAME:-默认}"
   tput cup 0 0; tput ed
   printf '╭%*s╮\n' "$((width-2))" '' | tr ' ' '─'
-  printf '│  proxy-agent TUI%-*s│\n' "$((width-18))" ''
-  printf '│  profile: %-*s│\n' "$((width-12))" "$profile_label"
-  printf '│  %s%-*s│\n' "$now" "$((width-21))" ''
+  printf '│  proxy-agent 代理控制台%-*s│\n' "$((width-25))" ''
+  printf '│  配置档案: %-*s│\n' "$((width-13))" "$profile_label"
+  printf '│  时间: %s%-*s│\n' "$now" "$((width-28))" ''
   printf '├%*s┤\n' "$((width-2))" '' | tr ' ' '─'
-  printf '│ %-*s│\n' "$((width-2))" 'RUNTIME'
-  while IFS= read -r line; do printf '│ %-*s│\n' "$((width-2))" "$line"; done <<< "$status"
-  printf '│ %-*s│\n' "$((width-2))" "HEALTH: $health"
-  printf '│ %-*s│\n' "$((width-2))" "ROUTE:  $route_info"
+  printf '│ %-*s│\n' "$((width-2))" '运行状态'
+  while IFS= read -r line; do
+    translate_status_line "$line"
+    printf '\n'
+  done <<< "$status"
+  printf '│ %-*s│\n' "$((width-2))" "健康状态: $health"
+  printf '│ %-*s│\n' "$((width-2))" "分流结果: $route_info"
   printf '├%*s┤\n' "$((width-2))" '' | tr ' ' '─'
-  printf '│ %-*s│\n' "$((width-2))" 'KEYS'
-  printf '│ %-*s│\n' "$((width-2))" '[s] start  [x] stop  [r] restart  [t] test  [d] diagnose'
-  printf '│ %-*s│\n' "$((width-2))" '[i] integrations  [R] route  [p] profile  [q] quit  [Enter] refresh'
-  printf '│ %-*s│\n' "$((width-2))" 'Auto-refresh: 2s'
+  printf '│ %-*s│\n' "$((width-2))" '快捷操作'
+  printf '│ %-*s│\n' "$((width-2))" '[s] 启动  [x] 停止  [r] 重启  [t] 测试  [d] 诊断'
+  printf '│ %-*s│\n' "$((width-2))" '[i] 集成  [R] 分流查询  [p] 切换配置档案  [q] 退出  [Enter] 刷新'
+  printf '│ %-*s│\n' "$((width-2))" '自动刷新：2 秒'
   printf '╰%*s╯\n' "$((width-2))" '' | tr ' ' '─'
 }
 
 route_prompt() {
-  tput cup 0 0; tput ed; printf 'Route query (hostname or IPv4): '
+  tput cup 0 0; tput ed; printf '输入主机名或 IPv4 查询分流：'
   local target; IFS= read -r target; [[ -n "$target" ]] || return
-  printf '\n%s\n\nPress any key.' "$("${CLI[@]}" route "$target" 2>&1 || true)"; read -rsn1
+  printf '\n%s\n\n按任意键返回。' "$("${CLI[@]}" route "$target" 2>&1 || true)"; read -rsn1
 }
 
-integration_view() { tput cup 0 0; tput ed; "${CLI[@]}" integration all 2>&1 || true; printf '\nPress any key.'; read -rsn1; }
+integration_view() { tput cup 0 0; tput ed; printf '应用集成配置\n\n'; "${CLI[@]}" integration all 2>&1 || true; printf '\n按任意键返回。'; read -rsn1; }
 
 profile_select() {
   local current="${PROFILE_NAME:-default}" choice
   mapfile -t profiles < <("$ROOT/bin/proxy-ctl" profiles list 2>/dev/null || true)
   tput cup 0 0; tput ed
-  printf 'Available profiles (current: %s)\n\n' "$current"
-  printf 'default\n'
+  printf '可用配置档案（当前：%s）\n\n' "$([[ "$current" == default ]] && printf '默认' || printf '%s' "$current")"
+  printf 'default  （默认）\n'
   local item
   for item in "${profiles[@]}"; do [[ -n "$item" && "$item" != "$current" ]] && printf '%s\n' "$item"; done
-  printf '\nEnter profile name (empty = default): '
+  printf '\n输入配置档案名称（留空 = 默认）：'
   IFS= read -r choice
   if [[ -z "$choice" || "$choice" == default ]]; then
     PROFILE_NAME=''
   else
     if ! printf '%s\n' "${profiles[@]}" | grep -Fqx -- "$choice"; then
-      printf '\nUnknown profile. Press any key.'
+      printf '\n未知配置档案。按任意键返回。'
       read -rsn1
       return
     fi

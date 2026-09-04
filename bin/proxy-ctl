@@ -17,7 +17,7 @@ source "$ROOT/lib/state.sh"
 
 PROFILE_NAME="${PA_PROFILE:-}"
 if [[ "${1:-}" == "--profile" ]]; then
-  [[ -n "${2:-}" ]] || die 'usage: proxy-ctl --profile <name> <command> [args]'
+  [[ -n "${2:-}" ]] || die '用法：proxy-ctl --profile <名称> <命令> [参数]'
   PROFILE_NAME="$2"
   shift 2
 fi
@@ -47,7 +47,7 @@ cmd_validate() { config_validate; }
 cmd_start() {
   config_validate
   backend_start
-  if ! adapter_start; then backend_stop; die 'proxy adapter failed to start'; fi
+  if ! adapter_start; then backend_stop; die 'HTTP 代理适配器启动失败'; fi
   state_mark_started
   state_sync
   log "started profile=${PROFILE_NAME:-default} backend=$BACKEND endpoint=$(backend_endpoint) http=${HTTP_ENABLED:-false}"
@@ -68,7 +68,7 @@ cmd_run() {
     if wait "$pid"; then
       return 0
     fi
-    warn "managed backend process $pid exited unexpectedly"
+    warn "托管后端进程 $pid 异常退出"
     return 1
   fi
   while :; do
@@ -104,15 +104,15 @@ cmd_status() {
       "$(json_quote "$endpoint")" "${HTTP_ENABLED:-false}" "$(json_quote "$adapter_state")"
     return 0
   fi
-  printf 'proxy-agent\n  profile: %s\n  backend: %s\n' "${PROFILE_NAME:-default}" "$BACKEND"
-  if backend_status 2>/dev/null; then echo '  backend: listening'; else echo '  backend: not listening'; fi
-  printf '  endpoint: %s\n' "$(backend_endpoint 2>/dev/null || printf 'unavailable')"
+  printf 'proxy-agent 代理控制平面\n  配置档案: %s\n  后端: %s\n' "${PROFILE_NAME:-default}" "$BACKEND"
+  if backend_status 2>/dev/null; then echo '  后端状态: 正常监听'; else echo '  后端状态: 未监听'; fi
+  printf '  endpoint: %s\n' "$(backend_endpoint 2>/dev/null || printf '不可用')"
   if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then
-    if adapter_privoxy_status 2>/dev/null; then echo '  HTTP:     listening'; else echo '  HTTP:     not listening'; fi
+    if adapter_privoxy_status 2>/dev/null; then echo '  HTTP状态: 正常监听'; else echo '  HTTP状态: 未监听'; fi
   else
-    echo '  HTTP:     disabled'
+    echo '  HTTP状态: 已禁用'
   fi
-  printf '  remote: %s@%s:%s\n' "${REMOTE_USER:-}" "${REMOTE_HOST:-}" "${REMOTE_PORT:-22}"
+  printf '  远端: %s@%s:%s\n' "${REMOTE_USER:-}" "${REMOTE_HOST:-}" "${REMOTE_PORT:-22}"
 }
 curl_via_endpoint() {
   local url="$1" endpoint
@@ -125,52 +125,52 @@ curl_via_http() {
 }
 cmd_test() {
   require_cmd curl
-  echo '== proxy-agent connectivity test =='
+  echo '== proxy-agent 连通性测试 =='
   local failed=0 target
   IFS=',' read -r -a targets <<< "${HEALTH_TARGETS:-}"
   for target in "${targets[@]}"; do
     [[ -n "$target" ]] || continue
     if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then
-      if curl_via_http "$target"; then printf 'PASS  HTTP     %s\n' "$target"; else printf 'FAIL  HTTP     %s\n' "$target"; failed=1; fi
+      if curl_via_http "$target"; then printf '通过  HTTP     %s\n' "$target"; else printf '失败  HTTP     %s\n' "$target"; failed=1; fi
     else
-      if curl_via_endpoint "$target"; then printf 'PASS  BACKEND  %s\n' "$target"; else printf 'FAIL  BACKEND  %s\n' "$target"; failed=1; fi
+      if curl_via_endpoint "$target"; then printf '通过  SOCKS    %s\n' "$target"; else printf '失败  SOCKS    %s\n' "$target"; failed=1; fi
     fi
   done
   return "$failed"
 }
 cmd_diagnose() {
-  echo '== proxy-agent diagnosis =='
+  echo '== proxy-agent 运行诊断 =='
   case "$BACKEND" in
     ssh-socks)
       for c in ssh autossh curl ss; do
-        command -v "$c" >/dev/null 2>&1 && printf 'OK    %s\n' "$c" || printf 'MISS  %s\n' "$c"
+        command -v "$c" >/dev/null 2>&1 && printf '正常  %s\n' "$c" || printf '缺少  %s\n' "$c"
       done
       ;;
     local-endpoint|http-connect)
-      command -v curl >/dev/null 2>&1 && echo 'OK    curl' || echo 'MISS  curl'
+      command -v curl >/dev/null 2>&1 && echo '正常  curl' || echo '缺少  curl'
       ;;
     mihomo)
-      command -v "${MIHOMO_BIN:-mihomo}" >/dev/null 2>&1 && echo "OK    ${MIHOMO_BIN:-mihomo}" || echo "MISS  ${MIHOMO_BIN:-mihomo}"
-      command -v curl >/dev/null 2>&1 && echo 'OK    curl' || echo 'MISS  curl'
+      command -v "${MIHOMO_BIN:-mihomo}" >/dev/null 2>&1 && echo "正常  ${MIHOMO_BIN:-mihomo}" || echo "缺少  ${MIHOMO_BIN:-mihomo}"
+      command -v curl >/dev/null 2>&1 && echo '正常  curl' || echo '缺少  curl'
       ;;
     sing-box)
-      command -v "${SING_BOX_BIN:-sing-box}" >/dev/null 2>&1 && echo "OK    ${SING_BOX_BIN:-sing-box}" || echo "MISS  ${SING_BOX_BIN:-sing-box}"
-      command -v curl >/dev/null 2>&1 && echo 'OK    curl' || echo 'MISS  curl'
+      command -v "${SING_BOX_BIN:-sing-box}" >/dev/null 2>&1 && echo "正常  ${SING_BOX_BIN:-sing-box}" || echo "缺少  ${SING_BOX_BIN:-sing-box}"
+      command -v curl >/dev/null 2>&1 && echo '正常  curl' || echo '缺少  curl'
       ;;
     *)
-      command -v curl >/dev/null 2>&1 && echo 'OK    curl' || echo 'MISS  curl'
+      command -v curl >/dev/null 2>&1 && echo '正常  curl' || echo '缺少  curl'
       ;;
   esac
-  [[ "${HTTP_ENABLED:-false}" != "true" ]] || { command -v privoxy >/dev/null 2>&1 && echo 'OK    privoxy' || echo 'MISS  privoxy'; }
-  echo "profile: ${PROFILE_NAME:-default}"
-  echo "config: $PA_CONFIG"
-  echo "backend: $BACKEND"
-  echo "endpoint: $(backend_endpoint 2>/dev/null || printf unavailable)"
-  echo "capabilities: $(backend_capabilities | tr '\n' ' ')"
+  [[ "${HTTP_ENABLED:-false}" != "true" ]] || { command -v privoxy >/dev/null 2>&1 && echo '正常  privoxy' || echo '缺少  privoxy'; }
+  echo "配置档案: ${PROFILE_NAME:-default}"
+  echo "配置文件: $PA_CONFIG"
+  echo "后端: $BACKEND"
+  echo "endpoint: $(backend_endpoint 2>/dev/null || printf 不可用)"
+  echo "能力: $(backend_capabilities | tr '\n' ' ')"
   if [[ "$BACKEND" == 'ssh-socks' && -n "${REMOTE_HOST:-}" && "${REMOTE_HOST:-}" != *example.com && "${REMOTE_HOST:-}" != 'your-ssh-host' ]]; then
-    getent hosts "$REMOTE_HOST" || warn "cannot resolve $REMOTE_HOST"
+    getent hosts "$REMOTE_HOST" || warn "无法解析远端主机 $REMOTE_HOST"
   fi
-  backend_status >/dev/null 2>&1 || warn "backend '$BACKEND' reports stopped/unhealthy"
+  backend_status >/dev/null 2>&1 || warn "后端 '$BACKEND' 当前未运行或不健康"
 }
 cmd_env() {
   if [[ "${1:-}" == '--off' ]]; then
@@ -201,40 +201,46 @@ cmd_integration() { exec "$ROOT/bin/proxy-agent-integration" "${1:-}"; }
 cmd_tui() { exec "$ROOT/bin/proxy-agent-tui"; }
 cmd_profiles() { exec "$ROOT/bin/proxy-agent-profile" "${1:-list}" "${2:-}"; }
 cmd_capabilities() { backend_capabilities; }
+cmd_history() { exec "$ROOT/bin/proxy-agent-health-history" "${@}"; }
 cmd_doctor() {
   local rc=0
-  [[ "${SOCKS_BIND:-127.0.0.1}" != '0.0.0.0' ]] || { warn 'SOCKS is exposed on all interfaces'; rc=1; }
+  [[ "${SOCKS_BIND:-127.0.0.1}" != '0.0.0.0' ]] || { warn 'SOCKS 暴露在所有网络接口'; rc=1; }
   if [[ "${BACKEND:-}" == ssh-socks ]]; then
-    [[ "${SSH_STRICT_HOST_KEY_CHECKING:-yes}" == 'yes' ]] || { warn 'SSH host-key verification is disabled'; rc=1; }
-    [[ -n "${REMOTE_HOST:-}" ]] || { warn 'REMOTE_HOST is empty'; rc=1; }
-    [[ "${REMOTE_HOST:-}" != 'proxy.example.com' && "${REMOTE_HOST:-}" != 'your-ssh-host' ]] || { warn 'REMOTE_HOST still uses the example placeholder'; rc=1; }
+    [[ "${SSH_STRICT_HOST_KEY_CHECKING:-yes}" == 'yes' ]] || { warn 'SSH host key 校验已关闭'; rc=1; }
+    [[ -n "${REMOTE_HOST:-}" ]] || { warn 'REMOTE_HOST 为空'; rc=1; }
+    [[ "${REMOTE_HOST:-}" != 'proxy.example.com' && "${REMOTE_HOST:-}" != 'your-ssh-host' ]] || { warn 'REMOTE_HOST 仍使用示例占位地址'; rc=1; }
   fi
-  [[ "${SOCKS_PORT:-1080}" =~ ^[0-9]+$ && "${SOCKS_PORT:-1080}" -ge 1 && "${SOCKS_PORT:-1080}" -le 65535 ]] || { warn 'invalid SOCKS_PORT'; rc=1; }
+  [[ "${SOCKS_PORT:-1080}" =~ ^[0-9]+$ && "${SOCKS_PORT:-1080}" -ge 1 && "${SOCKS_PORT:-1080}" -le 65535 ]] || { warn 'SOCKS_PORT 无效'; rc=1; }
   if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then
-    [[ "$HTTP_PORT" =~ ^[0-9]+$ && "$HTTP_PORT" -ge 1 && "$HTTP_PORT" -le 65535 ]] || { warn 'invalid HTTP_PORT'; rc=1; }
-    command -v privoxy >/dev/null 2>&1 || { warn 'HTTP_ENABLED=true but privoxy is missing'; rc=1; }
-    backend_capability socks5 || { warn 'HTTP adapter requires backend capability: socks5'; rc=1; }
+    [[ "$HTTP_PORT" =~ ^[0-9]+$ && "$HTTP_PORT" -ge 1 && "$HTTP_PORT" -le 65535 ]] || { warn 'HTTP_PORT 无效'; rc=1; }
+    command -v privoxy >/dev/null 2>&1 || { warn 'HTTP_ENABLED=true，但未找到 privoxy'; rc=1; }
+    backend_capability socks5 || { warn 'HTTP 适配器要求后端具备 socks5 能力'; rc=1; }
   fi
   return "$rc"
 }
 usage() {
   cat <<'EOF'
-Usage: proxy-ctl [--profile NAME] <command>
-  validate                 validate configuration and backend contract
-  start                    start configured backend and adapters
-  run                      start stack and remain attached for service managers
-  stop                     stop adapters and backend
-  restart                  restart configured stack
-  status [--json|--json=v2] show runtime state
-  test                     test configured targets via active proxy path
-  diagnose                 inspect dependencies/config/runtime
-  doctor                   check unsafe or inconsistent configuration
-  route <host-or-ip>       explain ordered routing decision
-  env [--off]              print shell commands for proxy environment
-  integration <app|all>    print application integration commands
-  profiles [list|show|path] [name]
-  capabilities             list backend capabilities
-  tui                      open interactive terminal dashboard
+用法：proxy-ctl [--profile 名称] <命令>
+  validate                    校验配置与 Backend 合同
+  start                       启动配置的后端与适配器
+  run                         启动代理栈并保持前台服务生命周期
+  stop                        停止适配器与后端
+  restart                     重启代理栈
+  status [--json|--json=v2]  查看运行状态
+  test                        测试配置的代理连通性
+  diagnose                    诊断依赖、配置与运行环境
+  doctor                      检查不安全或不一致的配置
+  route <主机名或IPv4>        解释有序分流策略
+  env [--off]                 输出 shell 代理环境变量命令
+  integration <应用|all>     输出应用集成配置
+  profiles [list|show|path] [名称]
+                              查看配置档案
+  capabilities                查看当前 Backend 能力
+  health-history [--limit N] [--json]
+                              查看健康检查历史
+  tui                         打开交互式终端控制台
+
+说明：--json 输出保持稳定的英文 schema；其他人类可读输出默认使用中文。
 EOF
 }
 case "${1:-}" in
@@ -252,6 +258,7 @@ case "${1:-}" in
   integration) shift; cmd_integration "${1:-}" ;;
   profiles) shift; cmd_profiles "${1:-list}" "${2:-}" ;;
   capabilities) cmd_capabilities ;;
+  health-history) shift; cmd_history "${@}" ;;
   tui) cmd_tui ;;
   *) usage; exit 2 ;;
 esac
