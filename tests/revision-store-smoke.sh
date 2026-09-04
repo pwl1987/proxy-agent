@@ -46,9 +46,9 @@ fi
 revision_set_desired_if_match 2 2 "$config"
 [[ "$(revision_desired_revision)" == 2 ]]
 
-# The lock must serialize concurrent writers without duplicate revision IDs.
+# The lock must serialize independent concurrent writers without duplicate revision IDs.
 for i in $(seq 1 10); do
-  ( revision_record "$config" "concurrent-$i" "concurrent" "passed" "pending" >"$TMP/revision-$i" ) &
+  bash -c 'source "$1/lib/revision-store.sh"; revision_record "$2" "concurrent-$3" "concurrent" "passed" "pending"' _ "$ROOT" "$config" "$i" >"$TMP/revision-$i" &
 done
 status=0
 for pid in $(jobs -pr); do
