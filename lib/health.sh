@@ -9,6 +9,10 @@ health_history_file() {
   printf '%s/health-history.jsonl' "$(health_markers_dir)"
 }
 
+health_recovery_state_file() {
+  printf '%s/health-recovery.json' "$(health_markers_dir)"
+}
+
 health_json_quote() {
   local value="$1"
   value="${value//\\/\\\\}"
@@ -30,6 +34,76 @@ health_record_event() {
     "$(health_json_quote "$result")" \
     "$(health_json_quote "$network")" \
     "$(health_json_quote "$detail")" >>"$(health_history_file)"
+}
+
+health_recovery_read_state() {
+  local file="$(health_recovery_state_file)"
+  if [[ -r "$file" ]]; then
+    python3 - "$file" <<'PY'
+import json
+import sys
+from pathlib import Path
+try:
+    data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    print(int(data.get("window_started", 0)))
+    print(int(data.get("attempts", 0)))
+    print(int(data.get("cooldown_until", 0)))
+except (OSError, ValueError, TypeError, json.JSONDecodeError):
+    print(0)
+    print(0)
+    print(0)
+PY
+  else
+    printf '0\n0\n0\n'
+  fi
+}
+
+health_recovery_write_state() {
+  local window_started="$1" attempts="$2" cooldown_until="$3" file tmp
+  file="$(health_recovery_state_file)"
+  mkdir -p "$(health_markers_dir)"
+  tmp="${file}.tmp.$$"
+  printf '{"window_started":%s,"attempts":%s,"cooldown_until":%s}\n' \
+    "$window_started" "$attempts" "$cooldown_until" >"$tmp"
+  chmod 0600 "$tmp"
+  mv -f "$tmp" "$file"
+}
+
+health_recovery_reset() {
+  health_recovery_write_state 0 0 0
+}
+
+health_recovery_allowed() {
+  local now="$(date +%s)" window_started attempts cooldown_until
+  local max_attempts="${HEALTH_RECOVERY_MAX_ATTEMPTS:-3}"
+  local window="${HEALTH_RECOVERY_WINDOW:-900}"
+  local cooldown="${HEALTH_RECOVERY_COOLDOWN:-300}"
+  mapfile -t state < <(health_recovery_read_state)
+  window_started="${state[0]:-0}"
+  attempts="${state[1]:-0}"
+  cooldown_until="${state[2]:-0}"
+
+  if (( window_started == 0 || now - window_started >= window )); then
+    window_started="$now"
+    attempts=0
+    cooldown_until=0
+    health_recovery_write_state "$window_started" "$attempts" "$cooldown_until"
+  fi
+
+  if (( cooldown_until > now )); then
+    health_record_event recovery_cooldown skipped "automatic recovery cooldown active until $cooldown_until"
+    return 1
+  fi
+
+  if (( attempts >= max_attempts )); then
+    health_record_event recovery_exhausted blocked "automatic recovery budget exhausted ($attempts/$max_attempts in ${window}s)"
+    return 1
+  fi
+
+  attempts=$((attempts + 1))
+  cooldown_until=$((now + cooldown))
+  health_recovery_write_state "$window_started" "$attempts" "$cooldown_until"
+  return 0
 }
 
 health_clear_markers() {

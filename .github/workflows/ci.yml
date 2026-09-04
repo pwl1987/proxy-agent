@@ -57,6 +57,8 @@ jobs:
         run: bash tests/reconciler-smoke.sh
       - name: Reconciler pin smoke
         run: bash tests/reconcile-pin-smoke.sh
+      - name: Health recovery smoke
+        run: bash tests/health-recovery-smoke.sh
       - name: CLI exec smoke
         run: bash tests/cli-exec-smoke.sh
       - name: Backend contract smoke
