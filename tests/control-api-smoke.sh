@@ -9,7 +9,7 @@ trap '[[ -z "${PID:-}" ]] || kill "$PID" >/dev/null 2>&1 || true; rm -rf "$TMP"'
 
 cat >"$CONFIG" <<'EOF'
 BACKEND="local-endpoint"
-LOCAL_PROXY_URL="http://127.0.0.1:3128"
+LOCAL_PROXY_URL="http://127.0.0.1:49152"
 LOCAL_PROXY_STATUS_TARGET="https://example.com"
 SOCKS_BIND="127.0.0.1"
 SOCKS_PORT="1080"
