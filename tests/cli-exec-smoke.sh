@@ -42,7 +42,11 @@ output="$(
   "$ROOT/bin/proxy-ctl" exec python3 -c 'import os,sys; print(os.environ.get("HTTP_PROXY")); print(os.environ.get("HTTPS_PROXY")); print(os.environ.get("ALL_PROXY")); print(os.environ.get("NO_PROXY")); print(sys.argv[1])' 'hello world'
 )"
 
+printf '%s\n' '--- exec environment ---' >&2
+printf '%s\n' "$output" >&2
+
 mapfile -t lines <<<"$output"
+[[ "${#lines[@]}" -eq 5 ]]
 [[ "${lines[0]}" == "http://127.0.0.1:3128" ]]
 [[ "${lines[1]}" == "http://127.0.0.1:3128" ]]
 [[ -z "${lines[2]}" ]]
@@ -51,6 +55,8 @@ mapfile -t lines <<<"$output"
 
 unset HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY http_proxy https_proxy all_proxy no_proxy
 output="$(PA_CONFIG="$CONFIG" "$ROOT/bin/proxy-ctl" exec --off python3 -c 'import os; print(repr(os.environ.get("HTTP_PROXY"))); print(repr(os.environ.get("HTTPS_PROXY"))); print(repr(os.environ.get("ALL_PROXY"))); print(repr(os.environ.get("NO_PROXY")))')"
+printf '%s\n' '--- exec --off environment ---' >&2
+printf '%s\n' "$output" >&2
 expected=$'None\nNone\nNone\nNone'
 [[ "$output" == "$expected" ]]
 
