@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+source "$ROOT/lib/common.sh"
+
+printf 'mode: rootless\n'
+printf 'config: %s\n' "$PA_CONFIG"
+printf 'state: %s\n' "$PA_STATE_DIR"
+printf 'logs: %s\n' "$PA_LOG_DIR"
+printf 'config_exists: %s\n' "$([[ -r "$PA_CONFIG" ]] && echo yes || echo no)"
+printf 'config_secure: %s\n' "$(config_file_secure "$PA_CONFIG" && echo yes || echo no)"
