@@ -19,7 +19,7 @@ cat >"$TMP/mihomo" <<'EOF'
 set -euo pipefail
 case "${1:-}" in
   -t)
-    [[ "${3:-}" == -f && -n "${4:-}" ]]
+    [[ "${2:-}" == -f && -n "${3:-}" ]]
     exit 0
     ;;
   *)
