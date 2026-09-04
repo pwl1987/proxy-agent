@@ -66,8 +66,8 @@ def audit_call(event: dict[str, Any]) -> None:
         raise RuntimeError(p.stderr.decode("utf-8", errors="replace").strip() or "audit append failed")
 
 
-def reconcile() -> dict[str, Any]:
-    p = subprocess.run([str(RECONCILER)], cwd=ROOT, env=os.environ.copy(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+def reconcile(*args: str) -> dict[str, Any]:
+    p = subprocess.run([str(RECONCILER), *args], cwd=ROOT, env=os.environ.copy(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     if p.returncode != 0:
         raise RuntimeError(p.stderr.decode("utf-8", errors="replace").strip() or "reconcile failed")
     return json.loads(p.stdout.decode("utf-8"))
@@ -252,9 +252,9 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         raw = revision_call("revision_get", str(revision))
         obj = json.loads(raw)
         revision_call("revision_set_desired", str(revision), json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True))
-        result = reconcile()
+        result = reconcile("--activate")
         actor = str(body.get("actor") or "local-api")
-        audit_call({"schema_version": 1, "event": "desired_state.reconciled", "revision": revision, "actor": actor, "timestamp": int(time.time()), "status": result.get("status")})
+        audit_call({"schema_version": 1, "event": "desired_state.activated", "revision": revision, "actor": actor, "timestamp": int(time.time()), "status": result.get("status")})
         self._send(HTTPStatus.ACCEPTED, response_envelope("apply", {"revision": revision, "desired_revision": int(revision_call("revision_desired_revision")), "reconcile": result}))
 
     def _rollback(self, body: Any) -> None:
@@ -271,8 +271,8 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         summary = f"rollback to revision {target}"
         rid = int(revision_call("revision_record", json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True), actor, summary, "passed", "pending"))
         revision_call("revision_set_desired", str(rid), json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":",), sort_keys=True))
-        result = reconcile()
-        audit_call({"schema_version": 1, "event": "rollback.reconciled", "revision": rid, "target_revision": target, "actor": actor, "timestamp": int(time.time()), "status": result.get("status")})
+        result = reconcile("--activate")
+        audit_call({"schema_version": 1, "event": "rollback.activated", "revision": rid, "target_revision": target, "actor": actor, "timestamp": int(time.time()), "status": result.get("status")})
         self._send(HTTPStatus.ACCEPTED, response_envelope("rollback", {"revision": rid, "target_revision": target, "desired_revision": int(revision_call("revision_desired_revision")), "reconcile": result}))
 
 
