@@ -58,7 +58,7 @@ run_profile_inspect() { PA_PROFILE_DIR="$TMP/profiles" bash "$ROOT/bin/proxy-age
 for file in \
   "$ROOT/bin/proxy-ctl" "$ROOT/bin/proxy-agent-health" "$ROOT/bin/proxy-agent-integration" "$ROOT/bin/proxy-agent-profile" \
   "$ROOT/bin/proxy-agent-tui" "$ROOT/install.sh" "$ROOT/adapters/privoxy.sh" "$ROOT/backends/ssh-socks.sh" "$ROOT/backends/local-endpoint.sh" \
-  "$ROOT/lib/common.sh" "$ROOT/lib/profile.sh" "$ROOT/lib/backend-capabilities.sh" "$ROOT/lib/backend.sh" "$ROOT/lib/route.sh" "$ROOT/lib/config.sh" \
+  "$ROOT/lib/common.sh" "$ROOT/lib/profile.sh" "$ROOT/lib/backend-capabilities.sh" "$ROOT/lib/backend.sh" "$ROOT/lib/route.sh" "$ROOT/lib/config.sh" "$ROOT/lib/state.sh" \
   "$ROOT/integrations/common.sh" "$ROOT/integrations/git.sh" "$ROOT/integrations/docker.sh" "$ROOT/integrations/pip.sh" "$ROOT/integrations/npm.sh"; do
   bash -n "$file"
 done
@@ -89,6 +89,9 @@ valid_ipv4_cidr "192.168.0.0/16"
 [[ "$(run_local validate | grep -c '^configuration valid:')" -eq 1 ]]
 ! run_bad validate >/dev/null 2>&1
 [[ "$(run_local status --json | grep -c '"backend":"local-endpoint"')" -eq 1 ]]
+[[ "$(run_local status --json=v2 | grep -c '"schema_version":2')" -eq 1 ]]
+[[ "$(run_local status --json=v2 | grep -c '"managed":false')" -eq 1 ]]
+[[ "$(run_local status --json=v2 | grep -c '"type":"none"')" -eq 1 ]]
 [[ "$(run_local capabilities | grep -c '^socks5$')" -eq 1 ]]
 [[ "$(run_local diagnose | grep -c '^OK    curl$')" -eq 1 ]]
 [[ "$(run_profile status | grep -c 'profile: work')" -eq 1 ]]
@@ -98,7 +101,11 @@ valid_ipv4_cidr "192.168.0.0/16"
 [[ "$(run_integration git | grep -c 'git config --global http.proxy')" -eq 1 ]]
 [[ "$(run_integration docker 2>/dev/null)" == *disabled* ]] || true
 [[ "$(grep -c '^Type=simple$' "$ROOT/systemd/proxy-agent.service")" -eq 1 ]]
-[[ "$(grep -c '^Environment=PA_FOREGROUND=true$' "$ROOT/systemd/proxy-agent.service")" -eq 1 ]]
+[[ "$(grep -c '^ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl run$' "$ROOT/systemd/proxy-agent.service")" -eq 1 ]]
+[[ "$(grep -c '^Type=simple$' "$ROOT/systemd/proxy-agent@.service")" -eq 1 ]]
+[[ "$(grep -c '^ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl --profile %i run$' "$ROOT/systemd/proxy-agent@.service")" -eq 1 ]]
+! grep -q 'PA_FOREGROUND' "$ROOT/systemd/proxy-agent.service"
+! grep -q 'PA_FOREGROUND' "$ROOT/systemd/proxy-agent@.service"
 ! run doctor
 
 echo 'PASS smoke tests'
