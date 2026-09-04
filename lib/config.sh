@@ -90,6 +90,7 @@ config_validate_core() {
   config_is_bind HTTP_BIND "${HTTP_BIND:-}"
   config_is_uint_range HTTP_PORT "${HTTP_PORT:-}" 1 65535
 
+  config_is_bool HEALTH_NETWORK_REQUIRED "${HEALTH_NETWORK_REQUIRED:-false}"
   config_is_uint_range HEALTH_TIMEOUT "${HEALTH_TIMEOUT:-}" 1 3600
   config_is_uint_range HEALTH_RETRIES "${HEALTH_RETRIES:-}" 0 100
   config_is_uint_range HEALTH_BACKOFF "${HEALTH_BACKOFF:-}" 0 3600
