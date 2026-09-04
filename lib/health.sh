@@ -32,10 +32,6 @@ health_record_event() {
     "$(health_json_quote "$detail")" >>"$(health_history_file)"
 }
 
-health_markers_dir() {
-  printf '%s' "$(state_dir)"
-}
-
 health_clear_markers() {
   local dir
   dir="$(health_markers_dir)"
