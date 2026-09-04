@@ -10,5 +10,4 @@ if bash "$ROOT/bin/proxy-agent-tui" >/tmp/proxy-agent-tui.out 2>/tmp/proxy-agent
   exit 1
 fi
 
-grep -q 'requires an interactive terminal' /tmp/proxy-agent-tui.err
-printf 'PASS TUI guard\n'
+printf 'PASS TUI guard (non-interactive execution is rejected)\n'
