@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PA_CONFIG="${PA_CONFIG:-/etc/proxy-agent/proxy-agent.conf}"
+if [[ -z "${PA_CONFIG+x}" ]]; then
+  if (( EUID == 0 )); then
+    PA_CONFIG="/etc/proxy-agent/proxy-agent.conf"
+  else
+    PA_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/proxy-agent/proxy-agent.conf"
+  fi
+fi
 if [[ -z "${PA_STATE_DIR+x}" ]]; then
   if (( EUID == 0 )); then
     PA_STATE_DIR="/run/proxy-agent"
@@ -13,7 +19,7 @@ if [[ -z "${PA_LOG_DIR+x}" ]]; then
   if (( EUID == 0 )); then
     PA_LOG_DIR="/var/log/proxy-agent"
   else
-    PA_LOG_DIR="${XDG_RUNTIME_DIR:-$HOME/.cache/proxy-agent}/log"
+    PA_LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/proxy-agent/log"
   fi
 fi
 
