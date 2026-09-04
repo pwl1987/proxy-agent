@@ -12,6 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Normalize executable permissions
+        run: |
+          chmod 0755 bin/* install.sh install-user.sh upgrade.sh upgrade-user.sh integrations/*.sh backends/*.sh adapters/*.sh lib/*.sh tests/*.sh
       - name: Install trace dependency
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends inotify-tools
       - name: Run revision trace
