@@ -15,6 +15,7 @@ if [[ ! -e "$ETC/proxy-agent.conf" ]]; then
   install -m 0600 "$ROOT/proxy-agent.conf.example" "$ETC/proxy-agent.conf"
 fi
 ln -sf "$PREFIX/bin/proxy-ctl" "$BIN/proxy-ctl"
+ln -sf "$PREFIX/bin/proxy-agent-tui" "$BIN/proxy-agent-tui"
 
 install -d -m 0755 /etc/systemd/system
 cat >/etc/systemd/system/proxy-agent.service <<EOF
@@ -45,4 +46,5 @@ fi
 echo "Installed proxy-agent to $PREFIX"
 echo "Config: $ETC/proxy-agent.conf"
 echo "Next: edit the config, then run: proxy-ctl doctor && systemctl start proxy-agent"
+echo "TUI: proxy-ctl tui"
 echo "Optional health loop: systemctl enable --now proxy-agent-health.timer"
