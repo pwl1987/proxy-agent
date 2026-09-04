@@ -1,27 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+backend_name_prefix() { printf 'backend_%s' "${1//-/_}"; }
+
 backend_capability() {
-  local capability="$1"
-  case "${BACKEND:-}" in
-    ssh-socks)
-      case "$capability" in
-        socks5) return 0 ;;
-        dynamic_dns) return 0 ;;
-        http_native) return 1 ;;
-        stream_proxy) return 0 ;;
-        *) return 1 ;;
-      esac
-      ;;
-    *) return 1 ;;
-  esac
+  local capability="$1" prefix
+  prefix="$(backend_name_prefix "${BACKEND:-}")"
+  declare -F "${prefix}_capability" >/dev/null 2>&1 || return 1
+  "${prefix}_capability" "$capability"
 }
 
 backend_capabilities() {
-  case "${BACKEND:-}" in
-    ssh-socks) printf '%s\n' socks5 dynamic_dns stream_proxy ;;
-    *) : ;;
-  esac
+  local prefix
+  prefix="$(backend_name_prefix "${BACKEND:-}")"
+  if declare -F "${prefix}_capabilities" >/dev/null 2>&1; then
+    "${prefix}_capabilities"
+  fi
 }
 
 backend_require_capability() {
