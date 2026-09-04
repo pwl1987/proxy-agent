@@ -1,0 +1,11 @@
+[Unit]
+Description=periodic proxy-agent desired-state reconciliation
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=30s
+RandomizedDelaySec=5s
+Unit=proxy-agent-reconcile.service
+
+[Install]
+WantedBy=timers.target
