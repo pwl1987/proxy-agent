@@ -19,7 +19,10 @@ for unit in "$ROOT"/systemd/*.service "$ROOT"/systemd/*.timer "$ROOT"/systemd-us
 done
 
 assert_contains systemd/proxy-agent.service 'Type=simple'
+assert_contains systemd/proxy-agent.service 'ExecStartPre=/bin/bash @PREFIX@/bin/proxy-agent-reconcile --bootstrap'
 assert_contains systemd/proxy-agent.service 'ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl run'
+assert_contains systemd/proxy-agent.service 'Environment=PA_CONFIG=/run/proxy-agent/runtime/proxy-agent.conf'
+assert_contains systemd/proxy-agent.service 'Environment=PA_BOOTSTRAP_CONFIG=/etc/proxy-agent/proxy-agent.conf'
 assert_contains systemd/proxy-agent.service 'User=@SERVICE_USER@'
 assert_contains systemd/proxy-agent.service 'Group=@SERVICE_GROUP@'
 assert_contains systemd/proxy-agent.service 'NoNewPrivileges=true'
