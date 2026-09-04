@@ -30,4 +30,56 @@ assert 'REMOTE_SSH_KEY' not in conf
 assert 'allow_public_listener' not in conf
 PY
 
+PA_STATE_DIR="$TMP/bootstrap-state" PA_BOOTSTRAP_CONFIG="$TMP/bootstrap.conf" mkdir -p "$TMP/bootstrap-state"
+cat >"$TMP/bootstrap.conf" <<'EOF'
+BACKEND="http-connect"
+HTTP_CONNECT_PROXY_URL="http://127.0.0.1:3128"
+SOCKS_BIND="127.0.0.1"
+SOCKS_PORT="1080"
+HTTP_ENABLED="false"
+HTTP_BIND="127.0.0.1"
+HTTP_PORT="8118"
+SSH_STRICT_HOST_KEY_CHECKING="yes"
+DIRECT_CIDRS=""
+DIRECT_DOMAINS=""
+NO_PROXY_EXTRA=""
+ROUTE_RULES=""
+HEALTH_TARGETS=""
+HEALTH_NETWORK_REQUIRED="false"
+HEALTH_TIMEOUT="10"
+HEALTH_RETRIES="1"
+HEALTH_BACKOFF="1"
+HEALTH_AUTO_RECOVER="true"
+INTEGRATE_GIT="false"
+INTEGRATE_DOCKER="false"
+INTEGRATE_PIP="false"
+INTEGRATE_NPM="false"
+EOF
+PA_STATE_DIR="$TMP/bootstrap-state" PA_BOOTSTRAP_CONFIG="$TMP/bootstrap.conf" PA_CONFIG="$TMP/bootstrap.conf" "$ROOT/bin/proxy-agent-reconcile" --bootstrap >"$TMP/bootstrap-result.json"
+python3 - "$TMP/bootstrap-result.json" "$TMP/bootstrap-state" <<'PY'
+import json, sys
+from pathlib import Path
+result = json.loads(Path(sys.argv[1]).read_text())
+state = Path(sys.argv[2])
+assert result["status"] == "projected"
+assert result["desired_revision"] == 1
+assert (state / "runtime" / "proxy-agent.conf").is_file()
+assert (state / "runtime" / "reconcile-state.json").is_file()
+PY
+
+PA_STATE_DIR="$TMP/activate-state" mkdir -p "$TMP/activate-state"
+PA_STATE_DIR="$TMP/activate-state" source "$ROOT/lib/revision-store.sh"
+PA_STATE_DIR="$TMP/activate-state" rid2="$(revision_record "$config" smoke 'activation smoke' passed pending)"
+PA_STATE_DIR="$TMP/activate-state" revision_set_desired "$rid2" "$config"
+PA_STATE_DIR="$TMP/activate-state" "$ROOT/bin/proxy-agent-reconcile" --activate >"$TMP/activate-result.json"
+python3 - "$TMP/activate-result.json" "$TMP/activate-state/runtime/reconcile-state.json" <<'PY'
+import json, sys
+from pathlib import Path
+result = json.loads(Path(sys.argv[1]).read_text())
+state = json.loads(Path(sys.argv[2]).read_text())
+assert result["status"] == "activated"
+assert result["observed_revision"] == result["desired_revision"] == 1
+assert state["status"] == "activated"
+PY
+
 echo 'reconciler smoke: PASS'
