@@ -67,6 +67,7 @@ apply_config_defaults() {
   : "${HTTP_ENABLED:=false}"
   : "${HTTP_BIND:=127.0.0.1}"
   : "${HTTP_PORT:=8118}"
+  : "${HEALTH_NETWORK_REQUIRED:=false}"
   : "${HEALTH_TIMEOUT:=10}"
   : "${HEALTH_RETRIES:=2}"
   : "${HEALTH_BACKOFF:=2}"
