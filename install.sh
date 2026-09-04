@@ -10,6 +10,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 install -d -m 0755 "$PREFIX" "$ETC" "$BIN"
 cp -a "$ROOT/bin" "$ROOT/lib" "$ROOT/backends" "$ROOT/adapters" "$ROOT/integrations" "$ROOT/systemd" "$PREFIX/"
+chmod 0755 "$PREFIX"/bin/proxy-* "$PREFIX"/bin/proxy-agent-* 2>/dev/null || true
 install -m 0644 "$ROOT/proxy-agent.conf.example" "$ETC/proxy-agent.conf.example"
 if [[ ! -e "$ETC/proxy-agent.conf" ]]; then
   install -m 0600 "$ROOT/proxy-agent.conf.example" "$ETC/proxy-agent.conf"
