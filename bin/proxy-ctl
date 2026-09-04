@@ -44,11 +44,23 @@ adapter_stop() { [[ "${HTTP_ENABLED:-false}" == "true" ]] && adapter_privoxy_sto
 cmd_start() {
   backend_start
   if ! adapter_start; then backend_stop; die 'proxy adapter failed to start'; fi
-  log "started profile=${PROFILE_NAME:-default} backend=$BACKEND endpoint=$(backend_endpoint) http=${HTTP_ENABLED:-false}"
+  log "started profile=${PROFILE_NAME:-default} backend=$BACKEND endpoint=$(backend_endpoint) http=${HTTP_ENABLED:-false} foreground=${PA_FOREGROUND:-false}"
 }
 cmd_stop() { adapter_stop; backend_stop; log 'stopped'; }
 cmd_restart() { cmd_stop; sleep 1; cmd_start; }
 cmd_status() {
+  if [[ "${1:-}" == '--json' ]]; then
+    local backend_state='stopped' adapter_state='disabled' endpoint
+    backend_status >/dev/null 2>&1 && backend_state='listening'
+    if [[ "${HTTP_ENABLED:-false}" == 'true' ]]; then
+      adapter_privoxy_status >/dev/null 2>&1 && adapter_state='listening' || adapter_state='stopped'
+    fi
+    endpoint="$(backend_endpoint 2>/dev/null || printf '')"
+    printf '{"schema_version":1,"profile":%q,"backend":%q,"backend_status":%q,"endpoint":%q,"http_enabled":%s,"http_status":%q}\n' \
+      "${PROFILE_NAME:-default}" "$BACKEND" "$backend_state" "$endpoint" \
+      "${HTTP_ENABLED:-false}" "$adapter_state"
+    return 0
+  fi
   printf 'proxy-agent\n  profile: %s\n  backend: %s\n' "${PROFILE_NAME:-default}" "$BACKEND"
   if backend_status 2>/dev/null; then echo '  backend: listening'; else echo '  backend: not listening'; fi
   printf '  endpoint: %s\n' "$(backend_endpoint 2>/dev/null || printf 'unavailable')"
@@ -117,11 +129,6 @@ cidr_contains() {
   if (( prefix == 0 )); then mask=0; else mask=$(( (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF )); fi
   (( (base & mask) == (value & mask) ))
 }
-cmd_route() {
-  local host="${1:-}"
-  [[ -n "$host" ]] || die 'usage: proxy-ctl route <host-or-ip>'
-  route_explain "$host"
-}
 cmd_env() {
   if [[ "${1:-}" == '--off' ]]; then
     printf 'unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy NO_PROXY no_proxy\n'
@@ -167,11 +174,11 @@ Usage: proxy-ctl [--profile NAME] <command>
   start                  start configured backend and adapters
   stop                   stop adapters and backend
   restart                restart configured stack
-  status                 show runtime state
+  status [--json]        show runtime state
   test                   test configured targets via active proxy path
   diagnose               inspect dependencies/config/runtime
   doctor                 check unsafe or inconsistent configuration
-  route <host-or-ip>     explain routing decision and matched rule
+  route <host-or-ip>     explain ordered routing decision
   env [--off]            print shell commands for proxy environment
   integration <app|all>  print application integration commands
   profiles [list|show|path] [name]
@@ -183,11 +190,11 @@ case "${1:-}" in
   start) cmd_start ;;
   stop) cmd_stop ;;
   restart) cmd_restart ;;
-  status) cmd_status ;;
+  status) shift; cmd_status "${1:-}" ;;
   test) cmd_test ;;
   diagnose) cmd_diagnose ;;
   doctor) cmd_doctor ;;
-  route) shift; cmd_route "${1:-}" ;;
+  route) shift; route_explain "${1:-}" ;;
   env) shift; cmd_env "${1:-}" ;;
   integration) shift; cmd_integration "${1:-}" ;;
   profiles) shift; cmd_profiles "${1:-list}" "${2:-}" ;;
