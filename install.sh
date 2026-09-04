@@ -33,7 +33,7 @@ ln -sf "$PREFIX/bin/proxy-agent-profile" "$BIN/proxy-agent-profile"
 ln -sf "$PREFIX/bin/proxy-agent-version" "$BIN/proxy-agent-version"
 
 install -d -m 0755 /etc/systemd/system
-for unit in proxy-agent.service proxy-agent@.service proxy-agent-health.service proxy-agent-health@.service proxy-agent-reconcile.service; do
+for unit in proxy-agent.service proxy-agent@.service proxy-agent-health.service proxy-agent-health@.service proxy-agent-reconcile.service proxy-agent-api.service; do
   sed -e "s#@PREFIX@#$PREFIX#g" -e "s#@SERVICE_USER@#$SERVICE_USER#g" -e "s#@SERVICE_GROUP@#$SERVICE_GROUP#g" \
     "$ROOT/systemd/$unit" >"/etc/systemd/system/$unit"
 done
@@ -44,6 +44,7 @@ done
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload
   systemctl enable proxy-agent.service >/dev/null
+  systemctl enable proxy-agent-api.service >/dev/null
 fi
 
 echo "Installed proxy-agent to $PREFIX"
@@ -51,6 +52,7 @@ echo "Service account: $SERVICE_USER:$SERVICE_GROUP"
 echo "Config: $ETC/proxy-agent.conf"
 echo "Profiles: $ETC/profiles"
 echo "Default service: proxy-agent.service"
+echo "Control API: proxy-agent-api.service (/run/proxy-agent/control.sock, local-only)"
 echo "Profile service: proxy-agent@<name>.service"
 echo "Next: provision an SSH key readable by $SERVICE_USER, edit the config, then run: proxy-ctl validate && proxy-ctl doctor && systemctl start proxy-agent"
 echo "TUI: proxy-ctl tui"
