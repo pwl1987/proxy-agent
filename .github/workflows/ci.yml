@@ -78,6 +78,8 @@ jobs:
         run: bash tests/smoke.sh
       - name: TUI guard smoke
         run: bash tests/tui-smoke.sh
+      - name: Chinese localization smoke
+        run: bash tests/i18n-smoke.sh
       - name: CLI policy smoke
         run: |
           mkdir -p /tmp/proxy-agent
