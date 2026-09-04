@@ -22,14 +22,14 @@ fi
 
 PREFIX="$PREFIX" ETC="$ETC" SERVICE_USER="$SERVICE_USER" SERVICE_GROUP="${SERVICE_GROUP:-proxy-agent}" bash "$ROOT/install.sh"
 
+"$PREFIX/bin/proxy-ctl" validate
+
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload
   if $was_active; then
     systemctl start "$SERVICE_NAME"
   fi
 fi
-
-"$PREFIX/bin/proxy-ctl" validate
 
 printf 'Upgraded proxy-agent to %s\n' "$(cat "$ROOT/VERSION")"
 printf 'Config preserved: %s\n' "$ETC/proxy-agent.conf"
