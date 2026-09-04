@@ -37,7 +37,7 @@ The installer never overwrites an existing user configuration.
 
 ## User systemd
 
-When a user systemd manager is available, the installer reloads it and enables `proxy-agent.service`. The installed templates also provide `proxy-agent@.service` and corresponding health services/timers.
+When a user systemd manager is available, the installer reloads it and enables `proxy-agent.service`. Without an active user manager, it still installs the complete unit set and reports that activation must be done later.
 
 ```bash
 systemctl --user start proxy-agent.service
@@ -52,9 +52,9 @@ systemctl --user enable --now proxy-agent@office.service
 systemctl --user enable --now proxy-agent-health@office.timer
 ```
 
-User services deliberately keep runtime state and logs under `%t` so `ProtectHome=read-only` can remain enabled.
+User services keep runtime state and logs under `%t` so `ProtectHome=read-only` can remain enabled.
 
-For machines that need the user service to survive logout and start at boot, a system administrator can enable systemd lingering for the user. The proxy-agent installer itself does not require root to do this.
+For a service that must survive logout and start at boot, a system administrator can enable systemd lingering for the user. The proxy-agent installer itself does not require root to install or configure the user service.
 
 ## SSH backend
 
