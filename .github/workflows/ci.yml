@@ -11,7 +11,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ludeeus/action-shellcheck@2.0.0
         with:
-          scandir: './bin ./lib ./backends ./adapters ./integrations'
+          scandir: './bin ./lib ./backends ./adapters ./integrations ./tests'
 
   smoke:
     runs-on: ubuntu-latest
@@ -27,7 +27,6 @@ jobs:
         run: bash tests/tui-smoke.sh
       - name: CLI policy smoke
         run: |
-          test -x bin/proxy-agent-tui || true
           mkdir -p /tmp/proxy-agent
           cp proxy-agent.conf.example /tmp/proxy-agent/proxy-agent.conf
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl diagnose
@@ -35,4 +34,6 @@ jobs:
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl route example.cn
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl route 10.12.34.56
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl integration all
+          PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl capabilities
+          PA_PROFILE_DIR=/tmp/proxy-agent/profiles true
           ! PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl doctor
