@@ -5,11 +5,19 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"
 SOCKET="$TMP/control.sock"
 CONFIG="$TMP/proxy-agent.conf"
+LOCAL_PROXY_PORT="$(python3 - <<'PY'
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.bind(('127.0.0.1', 0))
+print(s.getsockname()[1])
+s.close()
+PY
+)"
 trap '[[ -z "${PID:-}" ]] || kill "$PID" >/dev/null 2>&1 || true; rm -rf "$TMP"' EXIT
 
-cat >"$CONFIG" <<'EOF'
+cat >"$CONFIG" <<EOF
 BACKEND="local-endpoint"
-LOCAL_PROXY_URL="http://127.0.0.1:49152"
+LOCAL_PROXY_URL="http://127.0.0.1:${LOCAL_PROXY_PORT}"
 LOCAL_PROXY_STATUS_TARGET="https://example.com"
 SOCKS_BIND="127.0.0.1"
 SOCKS_PORT="1080"
@@ -51,16 +59,16 @@ curl_unix /api/v1/config >"$TMP/config.json"
 curl_unix /api/v1/revisions >"$TMP/revisions0.json"
 curl_unix /api/v1/metrics >"$TMP/metrics.txt"
 python3 - "$TMP" <<'PY'
-import json, sys
+import json,sys
 from pathlib import Path
-root = Path(sys.argv[1])
+root=Path(sys.argv[1])
 health=json.loads((root/"health.json").read_text()); status=json.loads((root/"status.json").read_text()); caps=json.loads((root/"capabilities.json").read_text()); config=json.loads((root/"config.json").read_text()); revisions=json.loads((root/"revisions0.json").read_text()); metrics=(root/"metrics.txt").read_text()
-assert health["data"]["status"] == "degraded" and health["data"]["readiness"] == "not_ready"
-assert health["data"]["desired_revision"] == 0 and health["data"]["observed_revision"] == 0
-assert status["data"]["backend"] == "local-endpoint" and status["data"]["current_revision"] == 0
-assert caps["data"]["backend"] == "local-endpoint" and caps["data"]["capabilities"] == ["http_native", "stream_proxy"]
-assert config["data"]["schema_version"] == 1 and config["data"]["backend"]["type"] == "local-endpoint"
-assert revisions["data"] == {"current":0,"desired":0,"revisions":[]}
+assert health["data"]["status"] == "degraded" and health["data"]["readiness"] == "not_ready", health
+assert health["data"]["desired_revision"] == 0 and health["data"]["observed_revision"] == 0, health
+assert status["data"]["backend"] == "local-endpoint" and status["data"]["current_revision"] == 0, status
+assert caps["data"]["backend"] == "local-endpoint" and caps["data"]["capabilities"] == ["http_native", "stream_proxy"], caps
+assert config["data"]["schema_version"] == 1 and config["data"]["backend"]["type"] == "local-endpoint", config
+assert revisions["data"] == {"current":0,"desired":0,"revisions":[]}, revisions
 assert "proxy_agent_control_api_up 1" in metrics
 PY
 
