@@ -42,14 +42,23 @@ WATCH_PID=$!
 PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" env -i PATH="$PATH" HOME="$HOME" PA_CONFIG="$CONFIG" PA_API_SOCKET="$SOCKET" PA_STATE_DIR="$TMP/state" PA_LOG_DIR="$TMP/log" /usr/bin/python3 "$ROOT/bin/proxy-agent-api" --socket "$SOCKET" >"$TMP/api.out" 2>"$TMP/api.err" &
 PID=$!
 for _ in {1..100}; do [[ -S "$SOCKET" ]] && break; sleep 0.05; done
-printf '%s\n' '=== preflight ==='
+printf '%s\n' '=== preflight before revision_current ==='
 find "$TMP/state" -maxdepth 3 -print | sort
+printf '%s\n' '=== initialize revision store exactly like control-api-smoke ==='
+PA_STATE_DIR="$TMP/state" bash -c 'source "$1"; printf "current=%s desired=%s\n" "$(revision_current)" "$(revision_desired_revision)"' _ "$ROOT/lib/revision-store.sh"
+printf '%s\n' '=== state after revision_current ==='
+find "$TMP/state" -maxdepth 3 -print | sort
+for f in "$TMP/state"/revisions/*; do
+  [[ -f "$f" ]] || continue
+  printf '%s\n' "--- $f ---"
+  cat "$f"
+done
 printf '%s\n' '=== health request ==='
 curl --silent --show-error --unix-socket "$SOCKET" -D "$TMP/headers" http://localhost/api/v1/health >"$TMP/health.json" 2>&1 || true
 cat "$TMP/headers" 2>/dev/null || true
 cat "$TMP/health.json" 2>/dev/null || true
 sleep 0.2
-printf '%s\n' '=== state ==='
+printf '%s\n' '=== state after health ==='
 find "$TMP/state" -maxdepth 3 -type f -printf '%P\n' 2>/dev/null | sort
 for f in "$TMP/state"/revisions/* "$TMP/state"/runtime/*; do
   [[ -f "$f" ]] || continue
