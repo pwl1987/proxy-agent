@@ -37,17 +37,20 @@ health_mark() {
 }
 
 health_probe_target() {
-  local target="$1" timeout="${HEALTH_TIMEOUT:-5}"
+  local target="$1" timeout="${HEALTH_TIMEOUT:-5}" proxy
   command -v curl >/dev/null 2>&1 || return 127
-  curl -fsS --max-time "$timeout" --connect-timeout "$timeout" -o /dev/null "$target"
+  if [[ "${HTTP_ENABLED:-false}" == true ]]; then
+    proxy="http://${HTTP_BIND}:${HTTP_PORT}"
+  else
+    proxy="$(backend_endpoint)"
+  fi
+  curl -fsS --proxy "$proxy" --max-time "$timeout" --connect-timeout "$timeout" -o /dev/null "$target"
 }
 
 health_probe_backend() {
   local target="${LOCAL_PROXY_STATUS_TARGET:-}"
   [[ -n "$target" ]] || return 2
-  curl -fsS --proxy "${LOCAL_PROXY_URL:?LOCAL_PROXY_URL is required}" \
-    --max-time "${HEALTH_TIMEOUT:-5}" --connect-timeout "${HEALTH_TIMEOUT:-5}" \
-    -o /dev/null "$target"
+  health_probe_target "$target"
 }
 
 health_probe_network() {
@@ -55,6 +58,7 @@ health_probe_network() {
   [[ -n "${HEALTH_TARGETS:-}" ]] || return 2
   IFS=',' read -r -a targets <<< "$HEALTH_TARGETS"
   for target in "${targets[@]}"; do
+    [[ -n "$target" ]] || continue
     health_probe_target "$target" || return 1
   done
 }

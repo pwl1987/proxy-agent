@@ -70,17 +70,13 @@ backend_local_endpoint_liveness() {
       port_listening "$port"
       ;;
     *)
-      # An unmanaged endpoint may be outside this host. Its network reachability
-      # is intentionally evaluated by the separate network-health probe.
       return 0
       ;;
   esac
 }
 
 backend_local_endpoint_status() {
-  backend_local_endpoint_validate >/dev/null 2>&1 || return 1
-  local probe="${LOCAL_PROXY_STATUS_TARGET:-https://example.com}"
-  curl -fsS --proxy "$LOCAL_PROXY_URL" --connect-timeout "${HEALTH_TIMEOUT:-2}" --max-time "$((HEALTH_TIMEOUT + 3))" "$probe" >/dev/null
+  backend_local_endpoint_liveness
 }
 
 backend_local_endpoint_endpoint() {
