@@ -67,6 +67,11 @@ done
 source "$ROOT/lib/common.sh"
 source "$ROOT/lib/route.sh"
 [[ "$(route_explain 'API.Example.Net')" == PROXY* ]]
+valid_ipv4_cidr "10.0.0.0/8"
+valid_ipv4_cidr "172.16.0.0/12"
+valid_ipv4_cidr "192.168.0.0/16"
+! valid_ipv4_cidr "999.1.1.1/8"
+! valid_ipv4_cidr "10.0.0.0/33"
 ! cidr_contains "999.1.1.1" "10.0.0.0/8"
 [[ "$(route_explain "10.12.34.56")" == PROXY* ]]
 
