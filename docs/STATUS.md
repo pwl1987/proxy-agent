@@ -1,19 +1,21 @@
 # Current status
 
-The v2 foundation, configuration gate, runtime/lifecycle hardening gate, deployment-security gate, and runtime-consistency gate are implemented. The control plane now supports both host-wide least-privilege systemd deployment and a rootless user-scoped operator deployment.
+The v2 foundation, configuration gate, runtime/lifecycle hardening gate, deployment-security gate, runtime-consistency gate, rootless operator gate, and health-semantics gate are implemented. The control plane now supports both host-wide least-privilege systemd deployment and a rootless user-scoped operator deployment.
 
 Implemented:
 
 - SSH → SOCKS5 backend with AutoSSH
 - local HTTP/SOCKS endpoint backend
 - optional Privoxy HTTP adapter with runtime-local generated config
-- backend lifecycle contract: `validate/start/stop/status/endpoint`
+- backend lifecycle contract: `validate/start/stop/liveness/status/endpoint`
 - backend ownership contract: `managed/pid/process_identity`
 - backend capability contract
 - named profiles and per-profile state
 - CLI + TUI profile selection
 - ordered route policy and route explanation
 - shell environment export with `socks5h`
+- backend liveness separated from active network-health probes
+- configurable network-health requirement via `HEALTH_NETWORK_REQUIRED`
 - health check, timed recovery, and runtime state synchronization
 - Git / Docker / pip / npm integration emitters
 - systemd service-manager ownership through `proxy-ctl run`
@@ -33,9 +35,9 @@ Implemented:
 
 ## Current engineering gate
 
-The next phase is backend compatibility and expansion preparation:
+The next phase is backend compatibility and expansion:
 
-1. separate backend liveness from active network health probes;
-2. define backend adapter compatibility tests;
+1. freeze the `liveness/status/network-health/recovery` semantic matrix for every backend;
+2. add backend/adapter compatibility contract tests;
 3. evaluate current sing-box support against the stable lifecycle/capability contract;
 4. evaluate mihomo and HTTP CONNECT backends only after the compatibility boundary is explicit.
