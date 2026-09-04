@@ -1,6 +1,6 @@
 # Roadmap
 
-## V2 foundation — current
+## V2 foundation — completed
 
 - SSH → SOCKS5 backend
 - Optional HTTP/Privoxy adapter
@@ -11,12 +11,13 @@
 - Dependency-light operator TUI
 - ShellCheck and functional smoke coverage
 
-## V2 control plane
+## V2 control plane — in progress
 
-- Formal backend capability contract
-- Named proxy profiles
-- Profile selection from CLI and TUI
-- Per-profile listeners and state
+- Formal backend capability contract ✅
+- Named proxy profiles ✅
+- Profile selection from CLI and TUI ✅
+- Per-profile listeners and state ✅
+- Backend endpoint contract ✅
 - Route priorities, wildcard domains and explicit proxy/direct rules
 - `route explain` with ordered policy evaluation
 - Structured state and machine-readable status
@@ -26,13 +27,24 @@
 
 Prioritize backends by operational value rather than adding wrappers indiscriminately:
 
-1. SSH SOCKS5
+1. SSH SOCKS5 ✅
 2. Existing local SOCKS/HTTP endpoint
 3. sing-box
 4. mihomo
 5. HTTP CONNECT upstream
 
-Every backend should implement the same semantic lifecycle contract and expose a local endpoint to adapters/integrations.
+Every backend implements the same semantic lifecycle contract:
+
+```text
+validate()
+start()
+stop()
+status()
+endpoint()
+capabilities()
+```
+
+Backend-specific behavior stays inside `backends/<name>.sh`; the control plane consumes only the contract.
 
 ## V2 runtime
 
@@ -45,14 +57,13 @@ Every backend should implement the same semantic lifecycle contract and expose a
 
 ## TUI evolution
 
-The first TUI is deliberately thin. Later versions can add:
+The dependency-light TUI is already usable for daily operator work. Next additions:
 
-- profile selector
 - backend and adapter cards
 - live health/event stream
-- route explorer
+- route explorer with policy order
 - configuration validation screen
 - restart confirmation for destructive actions
 - log viewer
 
-The TUI must remain a client of the same control-plane API/CLI semantics; it must never become a second implementation of backend logic.
+The TUI remains a client of the same control-plane semantics and never becomes a second backend implementation.
