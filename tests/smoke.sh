@@ -53,6 +53,13 @@ for file in \
   bash -n "$file"
 done
 
+# The routing library must be usable independently of proxy-ctl.
+source "$ROOT/lib/common.sh"
+source "$ROOT/lib/route.sh"
+[[ "$(route_explain 'API.Example.Net')" == PROXY* ]]
+! cidr_contains "999.1.1.1" "10.0.0.0/8"
+[[ "$(route_explain "10.12.34.56")" == PROXY* ]]
+
 [[ "$(run route example.cn)" == DIRECT* ]]
 [[ "$(run route foo.local)" == DIRECT* ]]
 [[ "$(run route 10.12.34.56)" == DIRECT* ]]
@@ -66,6 +73,7 @@ done
 [[ "$(run status --json | grep -c '"endpoint":"socks5h://127.0.0.1:1080"')" -eq 1 ]]
 [[ "$(run_local status --json | grep -c '"backend":"local-endpoint"')" -eq 1 ]]
 [[ "$(run_local capabilities | grep -c '^socks5$')" -eq 1 ]]
+[[ "$(run_local diagnose | grep -c '^OK    curl$')" -eq 1 ]]
 [[ "$(run_profile status | grep -c 'profile: work')" -eq 1 ]]
 [[ "$(run_profile status | grep -c 'remote: proxy@profile.example:22')" -eq 1 ]]
 [[ "$(run_profile_inspect list | grep -c '^work$')" -eq 1 ]]
