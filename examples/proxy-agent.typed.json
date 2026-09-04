@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "profile": "default",
+  "backend": {
+    "type": "local-endpoint",
+    "options": {
+      "url": "socks5://127.0.0.1:1080"
+    }
+  },
+  "listeners": {
+    "socks5": {
+      "bind": "127.0.0.1",
+      "port": 1080
+    },
+    "http": {
+      "enabled": false,
+      "bind": "127.0.0.1",
+      "port": 8118
+    }
+  },
+  "routing": {
+    "direct_cidrs": [],
+    "direct_domains": [
+      "localhost",
+      "*.internal.example"
+    ],
+    "no_proxy_extra": [],
+    "rules": []
+  },
+  "health": {
+    "network_required": false,
+    "timeout": 10,
+    "retries": 3,
+    "backoff": 2,
+    "auto_recover": true,
+    "targets": [
+      "https://example.com/"
+    ]
+  },
+  "integrations": {
+    "git": true,
+    "docker": true,
+    "pip": true,
+    "npm": true
+  },
+  "security": {
+    "ssh_host_key_checking": "yes",
+    "allow_public_listener": false
+  }
+}
