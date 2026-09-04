@@ -18,7 +18,7 @@ from typing import Any
 API_VERSION = "v1"
 ROOT = Path(__file__).resolve().parent.parent
 PROXY_CTL = ROOT / "bin" / "proxy-ctl"
-RECONCILER = ROOT / "bin" / "proxy-agent-reconcile"
+RECONCILER = Path(os.environ.get("PA_RECONCILER", ROOT / "bin" / "proxy-agent-reconcile"))
 REVISION_STORE = ROOT / "lib" / "revision-store.sh"
 AUDIT_STORE = ROOT / "lib" / "audit-store.sh"
 MAX_BODY = 1024 * 1024
@@ -66,11 +66,18 @@ def audit_call(event: dict[str, Any]) -> None:
         raise RuntimeError(p.stderr.decode("utf-8", errors="replace").strip() or "audit append failed")
 
 
+def stderr_message(stderr: bytes) -> str:
+    return stderr.decode("utf-8", errors="replace").strip()
+
+
 def reconcile(*args: str) -> dict[str, Any]:
     p = subprocess.run([str(RECONCILER), *args], cwd=ROOT, env=os.environ.copy(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     if p.returncode != 0:
-        raise RuntimeError(p.stderr.decode("utf-8", errors="replace").strip() or "reconcile failed")
-    return json.loads(p.stdout.decode("utf-8"))
+        raise RuntimeError(stderr_message(p.stderr) or "reconcile failed")
+    try:
+        return json.loads(p.stdout.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"reconcile returned invalid JSON: {exc}") from exc
 
 
 def observed_state() -> dict[str, Any]:
@@ -86,6 +93,21 @@ def observed_state() -> dict[str, Any]:
 
 class ConflictError(Exception):
     pass
+
+
+class ValidationError(Exception):
+    pass
+
+
+class ActivationError(Exception):
+    pass
+
+
+def safe_audit(event: dict[str, Any]) -> None:
+    try:
+        audit_call(event)
+    except Exception as exc:
+        print(f"control-api: audit append failed: {exc}", file=sys.stderr)
 
 
 class ControlRequestHandler(BaseHTTPRequestHandler):
@@ -130,6 +152,10 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         if handler is not None:
             try:
                 handler()
+            except FileNotFoundError:
+                self._send(HTTPStatus.NOT_FOUND, error_envelope("not_found", "revision not found"))
+            except ValidationError as exc:
+                self._send(HTTPStatus.UNPROCESSABLE_ENTITY, error_envelope("invalid_config", str(exc)))
             except Exception as exc:
                 self._send(HTTPStatus.INTERNAL_SERVER_ERROR, error_envelope("internal_error", str(exc)))
             return
@@ -153,18 +179,25 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
             body = self._read_json_body()
             if self.path == "/api/v1/validate":
                 self._validate(body)
+                self._send(HTTPStatus.OK, response_envelope("validation", {"valid": True}))
             elif self.path == "/api/v1/revisions":
                 self._create_revision(body)
             elif self.path == "/api/v1/apply":
                 self._apply(body)
             else:
                 self._rollback(body)
-        except (ValueError, json.JSONDecodeError) as exc:
+        except json.JSONDecodeError as exc:
             self._send(HTTPStatus.BAD_REQUEST, error_envelope("invalid_json", str(exc)))
+        except ValidationError as exc:
+            self._send(HTTPStatus.UNPROCESSABLE_ENTITY, error_envelope("invalid_config", str(exc)))
         except FileNotFoundError:
             self._send(HTTPStatus.NOT_FOUND, error_envelope("not_found", "revision not found"))
         except ConflictError as exc:
             self._send(HTTPStatus.CONFLICT, error_envelope("revision_conflict", str(exc)))
+        except ActivationError as exc:
+            self._send(HTTPStatus.SERVICE_UNAVAILABLE, error_envelope("activation_failed", str(exc)))
+        except ValueError as exc:
+            self._send(HTTPStatus.BAD_REQUEST, error_envelope("invalid_request", str(exc)))
         except Exception as exc:
             self._send(HTTPStatus.INTERNAL_SERVER_ERROR, error_envelope("internal_error", str(exc)))
 
@@ -182,7 +215,7 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         status = command_json("status", "--json")
         rc, stdout, stderr = run_proxy_ctl("capabilities")
         if rc != 0:
-            raise RuntimeError(stderr.decode("utf-8", errors="replace").strip() or "capabilities failed")
+            raise RuntimeError(stderr_message(stderr) or "capabilities failed")
         caps = [x for x in stdout.decode("utf-8", errors="replace").splitlines() if x]
         self._send(HTTPStatus.OK, response_envelope("capabilities", {"backend": status.get("backend", "unknown"), "capabilities": caps}))
 
@@ -217,16 +250,20 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
     @staticmethod
     def _validate(body: Any) -> None:
         if not isinstance(body, dict) or not isinstance(body.get("config"), dict):
-            raise ValueError("body.config must be an object")
+            raise ValidationError("body.config must be an object")
         cfg = body["config"]
         required = {"schema_version", "backend", "listeners", "health", "integrations", "routing", "security"}
         missing = sorted(required - cfg.keys())
         if missing:
-            raise ValueError(f"missing required config fields: {', '.join(missing)}")
-        if cfg["schema_version"] != 1 or not isinstance(cfg["backend"], dict) or not cfg["backend"].get("type"):
-            raise ValueError("invalid typed config")
+            raise ValidationError(f"missing required config fields: {', '.join(missing)}")
+        if cfg["schema_version"] != 1:
+            raise ValidationError("schema_version must be 1")
+        if not isinstance(cfg["backend"], dict) or not cfg["backend"].get("type"):
+            raise ValidationError("backend.type is required")
+        if not isinstance(cfg["security"], dict):
+            raise ValidationError("security must be an object")
         if cfg["security"].get("allow_public_listener") is True:
-            raise ValueError("public listener policy requires an explicit authenticated deployment boundary")
+            raise ValidationError("public listener policy requires an explicit authenticated deployment boundary")
 
     def _create_revision(self, body: Any) -> None:
         self._validate(body)
@@ -238,7 +275,7 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         actor = str(body.get("actor") or "local-api")
         summary = str(body.get("change_summary") or "configuration change")
         rid = int(revision_call("revision_record", cfg, actor, summary, "passed", "pending"))
-        audit_call({"schema_version": 1, "event": "revision.created", "revision": rid, "actor": actor, "timestamp": int(time.time()), "change_summary": summary})
+        safe_audit({"schema_version": 1, "event": "revision.created", "revision": rid, "actor": actor, "timestamp": int(time.time()), "change_summary": summary})
         self._send(HTTPStatus.CREATED, response_envelope("revision", json.loads(revision_call("revision_get", str(rid)))))
 
     def _apply(self, body: Any) -> None:
@@ -252,9 +289,14 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         raw = revision_call("revision_get", str(revision))
         obj = json.loads(raw)
         revision_call("revision_set_desired", str(revision), json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True))
-        result = reconcile("--activate")
         actor = str(body.get("actor") or "local-api")
-        audit_call({"schema_version": 1, "event": "desired_state.activated", "revision": revision, "actor": actor, "timestamp": int(time.time()), "status": result.get("status")})
+        try:
+            result = reconcile("--activate")
+        except Exception as exc:
+            message = str(exc)
+            safe_audit({"schema_version": 1, "event": "desired_state.activation_failed", "revision": revision, "actor": actor, "timestamp": int(time.time()), "status": "failed", "error": message})
+            raise ActivationError(message) from exc
+        safe_audit({"schema_version": 1, "event": "desired_state.activated", "revision": revision, "actor": actor, "timestamp": int(time.time()), "status": result.get("status")})
         self._send(HTTPStatus.ACCEPTED, response_envelope("apply", {"revision": revision, "desired_revision": int(revision_call("revision_desired_revision")), "reconcile": result}))
 
     def _rollback(self, body: Any) -> None:
@@ -270,9 +312,14 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         actor = str(body.get("actor") or "local-api")
         summary = f"rollback to revision {target}"
         rid = int(revision_call("revision_record", json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True), actor, summary, "passed", "pending"))
-        revision_call("revision_set_desired", str(rid), json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":",), sort_keys=True))
-        result = reconcile("--activate")
-        audit_call({"schema_version": 1, "event": "rollback.activated", "revision": rid, "target_revision": target, "actor": actor, "timestamp": int(time.time()), "status": result.get("status")})
+        revision_call("revision_set_desired", str(rid), json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+        try:
+            result = reconcile("--activate")
+        except Exception as exc:
+            message = str(exc)
+            safe_audit({"schema_version": 1, "event": "rollback.activation_failed", "revision": rid, "target_revision": target, "actor": actor, "timestamp": int(time.time()), "status": "failed", "error": message})
+            raise ActivationError(message) from exc
+        safe_audit({"schema_version": 1, "event": "rollback.activated", "revision": rid, "target_revision": target, "actor": actor, "timestamp": int(time.time()), "status": result.get("status")})
         self._send(HTTPStatus.ACCEPTED, response_envelope("rollback", {"revision": rid, "target_revision": target, "desired_revision": int(revision_call("revision_desired_revision")), "reconcile": result}))
 
 
