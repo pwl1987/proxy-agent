@@ -1,3 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' 'proxy-agent v0.2.0-dev'
+
+SCRIPT_PATH="${BASH_SOURCE[0]}"
+if command -v readlink >/dev/null 2>&1; then
+  SCRIPT_PATH="$(readlink -f -- "$SCRIPT_PATH")"
+fi
+ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
+
+if [[ -f "$ROOT/VERSION" ]]; then
+  version="$(tr -d '[:space:]' < "$ROOT/VERSION")"
+else
+  version='unknown'
+fi
+
+printf 'proxy-agent v%s\n' "$version"
