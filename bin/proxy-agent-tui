@@ -43,10 +43,21 @@ trap cleanup EXIT INT TERM
 tput smcup
 tput civis
 
+action_label() {
+  case "$1" in
+    start) printf '启动' ;;
+    stop) printf '停止' ;;
+    restart) printf '重启' ;;
+    test) printf '连通性测试' ;;
+    diagnose) printf '诊断' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
 run_action() {
   local action="$1"
   tput cup 0 0; tput ed
-  printf 'proxy-agent 操作：%s%s\n\n' "$action" "${PROFILE_NAME:+（配置档案：$PROFILE_NAME）}"
+  printf 'proxy-agent 操作：%s%s\n\n' "$(action_label "$action")" "${PROFILE_NAME:+（配置档案：$PROFILE_NAME）}"
   if "${CLI[@]}" "$action"; then
     printf '\n操作完成。按任意键返回。\n'
   else
