@@ -137,7 +137,7 @@ assert any(e.get("event")=="runtime.stop" for e in events), events
 assert any(e.get("event")=="runtime.start" for e in events), events
 PY
 
-conflict_status="$(post_status /api/v1/apply "$TMP/conflict.json" '{"revision":1,"if_match_revision":0}')"
+conflict_status="$(curl --silent --show-error --unix-socket "$SOCKET" -o "$TMP/conflict.json" -w '%{http_code}' -H 'Content-Type: application/json' -X POST --data '{"revision":1,"if_match_revision":0}' "http://localhost/api/v1/apply")"
 [[ "$conflict_status" == "409" ]]
 grep -q 'revision_conflict' "$TMP/conflict.json"
 rollback_status="$(post_status /api/v1/rollback "$TMP/rollback.json" '{"revision":1,"if_match_revision":1,"actor":"smoke"}')"
