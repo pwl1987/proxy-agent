@@ -78,6 +78,8 @@ jobs:
           mkdir -p /tmp/proxy-agent
           cp proxy-agent.conf.example /tmp/proxy-agent/proxy-agent.conf
           chmod 0600 /tmp/proxy-agent/proxy-agent.conf
+          sed -i 's/^BACKEND=.*/BACKEND="local-endpoint"/' /tmp/proxy-agent/proxy-agent.conf
+          sed -i 's#^LOCAL_PROXY_URL=.*#LOCAL_PROXY_URL="http://127.0.0.1:3128"#' /tmp/proxy-agent/proxy-agent.conf
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl diagnose
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl route example.com
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl route example.cn
