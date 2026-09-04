@@ -32,28 +32,39 @@ backend_ssh_socks_pid() {
   pid_file="$(backend_ssh_socks_pid_file)"
   [[ -r "$pid_file" ]] || return 1
   pid="$(cat "$pid_file" 2>/dev/null || true)"
-  [[ "$pid" =~ ^[0-9]+$ && -d "/proc/$pid" ]] || return 1
+  [[ "$pid" =~ ^[0-9]+$ && -d "/proc/$pid" ]] || { rm -f "$pid_file"; return 1; }
   if backend_ssh_socks_process_matches "$pid"; then
     printf '%s' "$pid"
   else
+    rm -f "$pid_file"
     return 1
   fi
 }
 
 backend_ssh_socks_process_matches() {
-  local pid="$1" cmdline
-  [[ -r "/proc/$pid/cmdline" ]] || return 1
+  local pid="$1" cmdline exe process_uid current_uid
+  [[ -r "/proc/$pid/cmdline" && -e "/proc/$pid/exe" ]] || return 1
   cmdline="$(tr '\0' ' ' </proc/"$pid"/cmdline 2>/dev/null || true)"
   [[ "$cmdline" == *autossh* ]] || return 1
   [[ "$cmdline" == *"-D ${SOCKS_BIND}:${SOCKS_PORT}"* || "$cmdline" == *"-D${SOCKS_BIND}:${SOCKS_PORT}"* ]] || return 1
   [[ "$cmdline" == *"${REMOTE_USER}@${REMOTE_HOST}"* ]] || return 1
+
+  exe="$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)"
+  [[ "$exe" == */autossh ]] || return 1
+
+  process_uid="$(awk '/^Uid:/{print $2}' "/proc/$pid/status" 2>/dev/null || true)"
+  current_uid="$(id -u)"
+  [[ "$process_uid" == "$current_uid" ]] || return 1
+
+  listener_owned "$SOCKS_BIND" "$SOCKS_PORT" "$pid"
 }
 
 backend_ssh_socks_process_identity() {
-  local pid
+  local pid exe
   pid="$(backend_ssh_socks_pid 2>/dev/null || true)"
   [[ -n "$pid" ]] || return 1
-  printf 'autossh:%s remote=%s@%s:%s socks=%s:%s' "$pid" "$REMOTE_USER" "$REMOTE_HOST" "${REMOTE_PORT:-22}" "$SOCKS_BIND" "$SOCKS_PORT"
+  exe="$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)"
+  printf 'autossh:%s exe=%s uid=%s remote=%s@%s:%s socks=%s:%s' "$pid" "${exe##*/}" "$(id -u)" "$REMOTE_USER" "$REMOTE_HOST" "${REMOTE_PORT:-22}" "$SOCKS_BIND" "$SOCKS_PORT"
 }
 
 backend_ssh_socks_validate() {
@@ -72,7 +83,7 @@ backend_ssh_socks_start() {
   backend_ssh_socks_validate
   mkdir -p "$PA_STATE_DIR" "$PA_LOG_DIR"
 
-  local existing_pid pid_file key
+  local existing_pid pid_file key pid
   pid_file="$(backend_ssh_socks_pid_file)"
   existing_pid="$(backend_ssh_socks_pid 2>/dev/null || true)"
   if [[ -n "$existing_pid" ]]; then
@@ -99,7 +110,7 @@ backend_ssh_socks_start() {
   echo "$pid" >"$pid_file"
 
   for _ in {1..20}; do
-    if backend_ssh_socks_pid >/dev/null 2>&1 && port_listening "$SOCKS_PORT"; then
+    if backend_ssh_socks_pid >/dev/null 2>&1 && listener_owned "$SOCKS_BIND" "$SOCKS_PORT" "$pid"; then
       return 0
     fi
     if ! kill -0 "$pid" 2>/dev/null; then
@@ -133,5 +144,5 @@ backend_ssh_socks_status() {
   local pid
   pid="$(backend_ssh_socks_pid 2>/dev/null || true)"
   [[ -n "$pid" ]] || return 1
-  port_listening "$SOCKS_PORT"
+  listener_owned "$SOCKS_BIND" "$SOCKS_PORT" "$pid"
 }

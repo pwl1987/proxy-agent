@@ -38,6 +38,10 @@ jobs:
           grep -q '^User=@SERVICE_USER@$' systemd/proxy-agent@.service
           grep -q '^User=@SERVICE_USER@$' systemd/proxy-agent-health.service
           grep -q '^User=@SERVICE_USER@$' systemd/proxy-agent-health@.service
+          grep -q '^Environment=PA_STATE_DIR=/run/proxy-agent$' systemd/proxy-agent.service
+          grep -q '^Environment=PA_LOG_DIR=/var/log/proxy-agent$' systemd/proxy-agent.service
+          grep -q '^Environment=PA_STATE_DIR=/run/proxy-agent$' systemd/proxy-agent@.service
+          grep -q '^Environment=PA_LOG_DIR=/var/log/proxy-agent$' systemd/proxy-agent@.service
           grep -q '^NoNewPrivileges=true$' systemd/proxy-agent.service
           grep -q '^ProtectSystem=strict$' systemd/proxy-agent.service
           grep -q '^ProtectHome=read-only$' systemd/proxy-agent.service
@@ -62,4 +66,5 @@ jobs:
           PA_PROFILE_DIR=/tmp/proxy-agent/profiles bash bin/proxy-agent-profile list
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl env
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl status --json
+          PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl status --json=v2
           ! PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl doctor

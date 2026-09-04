@@ -12,7 +12,7 @@
 - Dependency-light operator TUI
 - ShellCheck and functional smoke coverage
 
-## V2 control plane — completed foundation
+## V2 control plane — completed
 - Formal backend lifecycle contract ✅
 - Formal backend capability contract ✅
 - Named proxy profiles ✅
@@ -33,7 +33,7 @@
 - Long-lived `proxy-ctl run` service-manager entrypoint ✅
 - systemd lifecycle no longer depends on foreground backend environment hacks ✅
 
-## V2 deployment hardening — completed gate
+## V2 deployment hardening — completed
 - Dedicated least-privilege systemd service account ✅
 - Root-owned/group-readable configuration with no group/other write access ✅
 - Profile permission checks before shell-source evaluation ✅
@@ -41,12 +41,18 @@
 - systemd `NoNewPrivileges`, `ProtectSystem`, `ProtectHome`, and kernel sandboxing ✅
 - Generated Privoxy configuration moved out of `/etc` into runtime state ✅
 
-## V2 deployment hardening — next
+## V2 runtime consistency — completed
+- Profile-local atomic runtime-state lock ✅
+- Stale-lock recovery using PID/start-time identity ✅
+- Atomic `runtime.json` replacement ✅
+- SSH process executable/UID/command-line identity checks ✅
+- Exact listener-to-process ownership check ✅
+- Stale SSH PID file cleanup ✅
+
+## V2 next gate — operator portability
 - Rootless interactive installation/execution without requiring a system account
-- Atomic runtime-state locking and stale-state cleanup
-- Stronger process identity verification including executable/UID/listener binding
-- Separate backend liveness from active network health probes
 - Upgrade/migration checks for existing installations
+- Separate backend liveness from active network health probes
 
 ## V2 backends
 1. SSH SOCKS5 ✅
@@ -61,7 +67,7 @@ Every managed backend implements the same semantic lifecycle contract:
 ## V2 deployment
 - Rootless Linux execution
 - Container image and host/container network documentation
-- Reproducible installation and upgrade path
+- Reproducible installation and upgrade path ✅
 - Security hardening and least-privilege service account ✅
 - Configuration ownership/mode verification ✅
 

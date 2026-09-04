@@ -2,8 +2,20 @@
 set -euo pipefail
 
 PA_CONFIG="${PA_CONFIG:-/etc/proxy-agent/proxy-agent.conf}"
-PA_STATE_DIR="${PA_STATE_DIR:-/run/proxy-agent}"
-PA_LOG_DIR="${PA_LOG_DIR:-/var/log/proxy-agent}"
+if [[ -z "${PA_STATE_DIR+x}" ]]; then
+  if (( EUID == 0 )); then
+    PA_STATE_DIR="/run/proxy-agent"
+  else
+    PA_STATE_DIR="${XDG_RUNTIME_DIR:-$HOME/.cache/proxy-agent}/run"
+  fi
+fi
+if [[ -z "${PA_LOG_DIR+x}" ]]; then
+  if (( EUID == 0 )); then
+    PA_LOG_DIR="/var/log/proxy-agent"
+  else
+    PA_LOG_DIR="${XDG_RUNTIME_DIR:-$HOME/.cache/proxy-agent}/log"
+  fi
+fi
 
 log() { printf '[proxy-agent] %s\n' "$*"; }
 warn() { printf '[proxy-agent] WARNING: %s\n' "$*" >&2; }
@@ -117,4 +129,12 @@ svc() {
 port_listening() {
   command -v ss >/dev/null 2>&1 || return 1
   ss -ltn 2>/dev/null | awk '{print $4}' | grep -Eq "(^|:)${1}$"
+}
+
+listener_owned() {
+  local bind="$1" port="$2" pid="$3" endpoint
+  command -v ss >/dev/null 2>&1 || return 1
+  endpoint="${bind}:${port}"
+  ss -H -ltnp 2>/dev/null |
+    awk -v endpoint="$endpoint" -v pid="$pid" '$4 == endpoint && index($0, "pid=" pid ",") { found=1 } END { exit found ? 0 : 1 }'
 }
