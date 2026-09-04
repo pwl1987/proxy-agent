@@ -77,17 +77,24 @@ def activate(runtime_config: Path, desired_revision: int, state_path: Path) -> d
     previous_source = Path(os.environ.get("PA_RUNTIME_ACTIVE_CONFIG", "/etc/proxy-agent/proxy-agent.conf"))
     if had_previous:
         shutil.copy2(runtime_config, backup)
-        previous_source = runtime_config
+        previous_source = backup
 
     old_stop = run_proxy_ctl(previous_source, "stop")
     if old_stop.returncode:
+        if backup.exists():
+            backup.unlink()
         raise RuntimeError(old_stop.stderr.strip() or "failed to stop previous runtime")
 
     candidate_start = run_proxy_ctl(runtime_config, "start")
     if candidate_start.returncode:
         if had_previous and backup.exists():
             os.replace(backup, runtime_config)
-            run_proxy_ctl(runtime_config, "start")
+            restored = run_proxy_ctl(runtime_config, "start")
+            if restored.returncode:
+                raise RuntimeError(
+                    (candidate_start.stderr.strip() or "candidate runtime activation failed")
+                    + "; rollback runtime start also failed"
+                )
         raise RuntimeError(candidate_start.stderr.strip() or "candidate runtime activation failed")
 
     if backup.exists():
