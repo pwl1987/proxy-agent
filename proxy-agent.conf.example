@@ -1,0 +1,37 @@
+# proxy-agent v2 example configuration
+# Copy to /etc/proxy-agent/proxy-agent.conf and edit.
+
+# Backend: ssh-socks (current), future: http-connect/sing-box/mihomo
+BACKEND="ssh-socks"
+
+# Remote SSH endpoint
+REMOTE_HOST="proxy.example.com"
+REMOTE_USER="proxy"
+REMOTE_PORT="22"
+REMOTE_SSH_KEY="~/.ssh/id_ed25519"
+
+# Local listeners — loopback is the secure default
+SOCKS_BIND="127.0.0.1"
+SOCKS_PORT="1080"
+HTTP_ENABLED="true"
+HTTP_BIND="127.0.0.1"
+HTTP_PORT="8118"
+
+# SSH keepalive
+AUTOSSH_MONITOR_PORT="0"
+SSH_SERVER_ALIVE_INTERVAL="30"
+SSH_SERVER_ALIVE_COUNT_MAX="3"
+
+# Routing policy
+DIRECT_CIDRS="127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+DIRECT_DOMAINS="localhost,.local,.cn"
+
+# Optional application integration
+INTEGRATE_GIT="true"
+INTEGRATE_DOCKER="false"
+INTEGRATE_PIP="false"
+INTEGRATE_NPM="false"
+
+# Health checks (comma separated URLs)
+HEALTH_TARGETS="https://github.com,https://pypi.org,https://registry.npmjs.org"
+HEALTH_TIMEOUT="10"
