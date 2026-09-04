@@ -2,20 +2,17 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-# shellcheck source=../lib/common.sh
 source "$ROOT/lib/common.sh"
-# shellcheck source=../integrations/common.sh
+source "$ROOT/lib/backend-capabilities.sh"
+source "$ROOT/lib/backend.sh"
 source "$ROOT/integrations/common.sh"
-# shellcheck source=../integrations/git.sh
 source "$ROOT/integrations/git.sh"
-# shellcheck source=../integrations/docker.sh
 source "$ROOT/integrations/docker.sh"
-# shellcheck source=../integrations/pip.sh
 source "$ROOT/integrations/pip.sh"
-# shellcheck source=../integrations/npm.sh
 source "$ROOT/integrations/npm.sh"
 
 load_config
+backend_load
 
 usage() {
   cat <<'EOF'
