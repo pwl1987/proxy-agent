@@ -33,6 +33,38 @@ expand_home() {
   esac
 }
 
+valid_ipv4() {
+  local ip="$1" IFS=.
+  local a b c d
+  [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+  read -r a b c d <<< "$ip"
+  for octet in "$a" "$b" "$c" "$d"; do
+    [[ "$octet" =~ ^[0-9]+$ ]] || return 1
+    (( octet <= 255 )) || return 1
+  done
+}
+
+ipv4_to_int() {
+  local IFS=.
+  local a b c d
+  read -r a b c d <<< "$1"
+  printf '%u\n' $(( (a << 24) | (b << 16) | (c << 8) | d ))
+}
+
+cidr_contains() {
+  local ip="$1" cidr="$2" network prefix mask base value
+  valid_ipv4 "$ip" || return 1
+  [[ "$cidr" =~ ^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/([0-9]+)$ ]] || return 1
+  network="${BASH_REMATCH[1]}"
+  prefix="${BASH_REMATCH[2]}"
+  valid_ipv4 "$network" || return 1
+  (( prefix >= 0 && prefix <= 32 )) || return 1
+  base="$(ipv4_to_int "$network")"
+  value="$(ipv4_to_int "$ip")"
+  if (( prefix == 0 )); then mask=0; else mask=$(( (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF )); fi
+  (( (base & mask) == (value & mask) ))
+}
+
 svc() {
   local action="$1"; shift
   if command -v systemctl >/dev/null 2>&1 && [[ -d /run/systemd/system ]]; then
