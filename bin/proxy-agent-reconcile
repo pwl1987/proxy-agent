@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Reconcile canonical desired state into a safe legacy runtime projection."""
+"""Reconcile canonical desired state into the runtime and optionally activate it."""
 from __future__ import annotations
 
+import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -11,6 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 REVISION_STORE = ROOT / "lib" / "revision-store.sh"
 EXPORTER = ROOT / "lib" / "typed-legacy-export.py"
+PROXY_CTL = ROOT / "bin" / "proxy-ctl"
 
 
 def call_store(function: str, *args: str) -> str:
@@ -23,6 +26,20 @@ def call_store(function: str, *args: str) -> str:
     return p.stdout.decode("utf-8")
 
 
+def run_proxy_ctl(config: Path, command: str) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["PA_CONFIG"] = str(config)
+    return subprocess.run(
+        [str(PROXY_CTL), command],
+        cwd=ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+
+
 def atomic_write(path: Path, content: str, mode: int = 0o600) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.tmp.{os.getpid()}")
@@ -31,11 +48,74 @@ def atomic_write(path: Path, content: str, mode: int = 0o600) -> None:
     os.replace(tmp, path)
 
 
+def bootstrap_desired() -> int:
+    current = int(call_store("revision_current"))
+    if current != 0:
+        return current
+    source_config = Path(os.environ.get("PA_BOOTSTRAP_CONFIG", os.environ.get("PA_CONFIG", "/etc/proxy-agent/proxy-agent.conf")))
+    exported = subprocess.run(
+        [str(PROXY_CTL), "config", "export-typed"],
+        cwd=ROOT,
+        env={**os.environ, "PA_CONFIG": str(source_config)},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        check=False,
+    )
+    if exported.returncode:
+        raise RuntimeError(exported.stderr.strip() or "bootstrap typed export failed")
+    config = json.loads(exported.stdout)
+    payload = json.dumps(config, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    revision = int(call_store("revision_record", payload, "bootstrap", "bootstrap legacy configuration", "passed", "pending"))
+    call_store("revision_set_desired", str(revision), payload)
+    return revision
+
+
+def activate(runtime_config: Path, desired_revision: int, state_path: Path) -> dict[str, object]:
+    backup = runtime_config.with_name(f".{runtime_config.name}.previous")
+    had_previous = runtime_config.exists()
+    previous_source = Path(os.environ.get("PA_RUNTIME_ACTIVE_CONFIG", "/etc/proxy-agent/proxy-agent.conf"))
+    if had_previous:
+        shutil.copy2(runtime_config, backup)
+        previous_source = runtime_config
+
+    old_stop = run_proxy_ctl(previous_source, "stop")
+    if old_stop.returncode:
+        raise RuntimeError(old_stop.stderr.strip() or "failed to stop previous runtime")
+
+    candidate_start = run_proxy_ctl(runtime_config, "start")
+    if candidate_start.returncode:
+        if had_previous and backup.exists():
+            os.replace(backup, runtime_config)
+            run_proxy_ctl(runtime_config, "start")
+        raise RuntimeError(candidate_start.stderr.strip() or "candidate runtime activation failed")
+
+    if backup.exists():
+        backup.unlink()
+    result = {
+        "schema_version": 1,
+        "status": "activated",
+        "desired_revision": desired_revision,
+        "observed_revision": desired_revision,
+        "runtime_config": str(runtime_config),
+    }
+    atomic_write(state_path, json.dumps(result, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n")
+    return result
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description="proxy-agent desired-state reconciler")
+    parser.add_argument("--bootstrap", action="store_true", help="seed desired state from the legacy config when no revision exists")
+    parser.add_argument("--activate", action="store_true", help="activate the projected runtime configuration")
+    args = parser.parse_args()
+
     state_dir = Path(os.environ.get("PA_STATE_DIR", "/run/proxy-agent"))
     profile = os.environ.get("PA_PROFILE", "")
     if profile and os.environ.get("PA_STATE_DIR_EXPLICIT", "false") != "true":
         state_dir = state_dir / profile
+
+    if args.bootstrap:
+        bootstrap_desired()
 
     desired_revision = int(call_store("revision_desired_revision"))
     if desired_revision == 0:
@@ -63,22 +143,20 @@ def main() -> int:
     runtime_config = runtime_dir / "proxy-agent.conf"
     observed_state = runtime_dir / "reconcile-state.json"
     atomic_write(runtime_config, exporter.stdout)
-    atomic_write(
-        observed_state,
-        json.dumps(
-            {
-                "schema_version": 1,
-                "status": "projected",
-                "desired_revision": desired_revision,
-                "observed_revision": desired_revision,
-                "runtime_config": str(runtime_config),
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        ) + "\n",
-    )
-    print(json.dumps({"schema_version": 1, "status": "projected", "desired_revision": desired_revision, "observed_revision": desired_revision, "runtime_config": str(runtime_config)}, separators=(",", ":")))
+
+    if args.activate:
+        result = activate(runtime_config, desired_revision, observed_state)
+    else:
+        result = {
+            "schema_version": 1,
+            "status": "projected",
+            "desired_revision": desired_revision,
+            "observed_revision": desired_revision,
+            "runtime_config": str(runtime_config),
+        }
+        atomic_write(observed_state, json.dumps(result, ensure_ascii=False, separators=(",", ":"), sort_keys=True) + "\n")
+
+    print(json.dumps(result, separators=(",", ":"), sort_keys=True))
     return 0
 
 
