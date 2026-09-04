@@ -2,6 +2,14 @@
 
 `proxy-agent` 是 Linux 上的统一 Proxy Control Plane：负责管理代理后端、适配器、分流策略、运行状态、健康检查、应用集成，以及 systemd / rootless / container 等运行方式。
 
+## 中文文档导航
+
+- [CLI 参考](CLI.zh-CN.md)
+- [运维手册](OPERATIONS.zh-CN.md)
+- [容器部署](CONTAINER.zh-CN.md)
+- [Host / Container 网络](NETWORKING.zh-CN.md)
+- [发布与回滚](RELEASE.zh-CN.md)
+
 ## 1. 快速开始
 
 ### 系统级部署
@@ -65,6 +73,7 @@ proxy-ctl env [--off]
 proxy-ctl integration <git|docker|pip|npm|all>
 proxy-ctl profiles [list|show|path] [名称]
 proxy-ctl capabilities
+proxy-ctl health-history [--limit N] [--json]
 proxy-ctl tui
 ```
 
@@ -72,14 +81,7 @@ proxy-ctl tui
 
 ## 4. TUI 操作
 
-主界面显示：
-
-- 当前 Profile
-- Backend 与 endpoint
-- 后端运行状态
-- 健康状态
-- `github.com` 当前分流结果
-- 常用运维操作
+主界面显示当前 Profile、Backend、endpoint、后端运行状态、健康状态、分流结果和常用运维操作。
 
 快捷键：
 
@@ -105,6 +107,7 @@ proxy-ctl --profile office status
 proxy-ctl --profile office start
 proxy-ctl --profile office test
 proxy-ctl --profile office route github.com
+proxy-ctl --profile office health-history
 ```
 
 ## 6. Health 与恢复
@@ -129,14 +132,7 @@ proxy-ctl health-history --json
 
 `route` 只解释策略，不直接修改 Linux 路由表。
 
-支持：
-
-- `exact` 精确匹配
-- `suffix` 后缀匹配
-- `wildcard` 通配符匹配
-- `cidr` IPv4 网段匹配
-
-数字越小 priority 越高。
+支持 `exact`、`suffix`、`wildcard`、`cidr` 四类匹配；数字越小 priority 越高。
 
 ## 8. 应用集成
 
@@ -160,6 +156,8 @@ proxy-ctl run
 
 容器内使用非 root `proxy-agent` 服务账户。生产部署应通过挂载或镜像派生方式提供经过验证的实际配置，不应直接使用示例配置中的占位服务器。
 
+详细说明见：[容器部署](CONTAINER.zh-CN.md) 和 [Host / Container 网络](NETWORKING.zh-CN.md)。
+
 ## 10. 安全默认值
 
 - SOCKS 默认绑定 `127.0.0.1`。
@@ -174,25 +172,9 @@ proxy-ctl run
 
 发布使用 tag 驱动：tag 必须与 `VERSION` 严格一致。
 
-推荐流程：
+升级失败时，`upgrade.sh` / `upgrade-user.sh` 会恢复上一版本的程序、配置、Profile 与对应 systemd 单元；只有校验通过后才按升级前状态恢复服务。
 
-```text
-main CI 全绿
-  ↓
-tag v0.2.x
-  ↓
-VERSION/tag 一致性检查
-  ↓
-容器镜像构建
-  ↓
-推送 GHCR
-  ↓
-记录不可变 digest
-  ↓
-生成 GitHub Release
-```
-
-升级必须先校验新安装，再恢复原运行状态。出现升级失败时，应保持旧版本可回退，不允许在未验证的新版本上直接恢复服务。
+详细流程见：[发布与回滚](RELEASE.zh-CN.md)。
 
 ## 12. 英文机器接口与中文运维界面
 
