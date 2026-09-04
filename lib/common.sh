@@ -2,25 +2,34 @@
 set -euo pipefail
 
 if [[ -z "${PA_CONFIG+x}" ]]; then
+  PA_CONFIG_EXPLICIT=false
   if (( EUID == 0 )); then
     PA_CONFIG="/etc/proxy-agent/proxy-agent.conf"
   else
     PA_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/proxy-agent/proxy-agent.conf"
   fi
+else
+  PA_CONFIG_EXPLICIT=true
 fi
 if [[ -z "${PA_STATE_DIR+x}" ]]; then
+  PA_STATE_DIR_EXPLICIT=false
   if (( EUID == 0 )); then
     PA_STATE_DIR="/run/proxy-agent"
   else
     PA_STATE_DIR="${XDG_RUNTIME_DIR:-$HOME/.cache/proxy-agent}/run"
   fi
+else
+  PA_STATE_DIR_EXPLICIT=true
 fi
 if [[ -z "${PA_LOG_DIR+x}" ]]; then
+  PA_LOG_DIR_EXPLICIT=false
   if (( EUID == 0 )); then
     PA_LOG_DIR="/var/log/proxy-agent"
   else
     PA_LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/proxy-agent/log"
   fi
+else
+  PA_LOG_DIR_EXPLICIT=true
 fi
 
 log() { printf '[proxy-agent] %s\n' "$*"; }
