@@ -6,6 +6,7 @@ source "$ROOT/lib/common.sh"
 source "$ROOT/lib/profile.sh"
 source "$ROOT/lib/backend-capabilities.sh"
 source "$ROOT/lib/backend.sh"
+source "$ROOT/lib/route.sh"
 source "$ROOT/adapters/privoxy.sh"
 
 PROFILE_NAME="${PA_PROFILE:-}"
@@ -119,25 +120,7 @@ cidr_contains() {
 cmd_route() {
   local host="${1:-}"
   [[ -n "$host" ]] || die 'usage: proxy-ctl route <host-or-ip>'
-  local item
-  IFS=',' read -r -a items <<< "${DIRECT_DOMAINS:-}"
-  for item in "${items[@]}"; do
-    item="${item#.}"
-    [[ -n "$item" ]] || continue
-    if [[ "$host" == "$item" || "$host" == *".$item" ]]; then
-      echo "DIRECT  $host  (domain policy: $item)"
-      return 0
-    fi
-  done
-  IFS=',' read -r -a items <<< "${DIRECT_CIDRS:-}"
-  for item in "${items[@]}"; do
-    [[ -n "$item" ]] || continue
-    if cidr_contains "$host" "$item"; then
-      echo "DIRECT  $host  (CIDR policy: $item)"
-      return 0
-    fi
-  done
-  echo "PROXY   $host  (default route)"
+  route_explain "$host"
 }
 cmd_env() {
   if [[ "${1:-}" == '--off' ]]; then
@@ -188,7 +171,7 @@ Usage: proxy-ctl [--profile NAME] <command>
   test                   test configured targets via active proxy path
   diagnose               inspect dependencies/config/runtime
   doctor                 check unsafe or inconsistent configuration
-  route <host-or-ip>     explain domain/CIDR routing decision
+  route <host-or-ip>     explain routing decision and matched rule
   env [--off]            print shell commands for proxy environment
   integration <app|all>  print application integration commands
   profiles [list|show|path] [name]
