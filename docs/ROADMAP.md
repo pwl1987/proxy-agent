@@ -54,10 +54,13 @@
 - mihomo ✅
 - HTTP CONNECT upstream ✅
 
-## V2 release engineering — next
-- Versioned 0.2.x release/tag
-- Reproducible container image build/publish and digest capture
+## V2 release engineering — in progress
+- Tag-driven release workflow with VERSION/tag consistency gate ✅
+- Non-root container build and GHCR publish workflow ✅
+- Published image digest capture ✅
+- GitHub release generation ✅
+- Versioned 0.2.x release/tag ⏳
 - Real-binary optional CI matrix for sing-box/mihomo
 - Structured operational telemetry and health-history inspection
 - Host/container networking deployment patterns
-- Upgrade rollback strategy and compatibility policy
+- Upgrade rollback verification and compatibility policy ✅
