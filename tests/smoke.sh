@@ -16,7 +16,7 @@ SOCKS_PORT="1080"
 HTTP_ENABLED="false"
 HTTP_BIND="127.0.0.1"
 HTTP_PORT="8118"
-DIRECT_CIDRS="127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+DIRECT_CIDRS="127.0.0.1/32,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 DIRECT_DOMAINS="localhost,.local,.cn"
 NO_PROXY_EXTRA="internal.example"
 ROUTE_RULES=$'100|DIRECT|suffix|.internal.example\n200|PROXY|wildcard|*.example.net'
@@ -134,9 +134,11 @@ state_lock_release
 [[ "$(grep -c '^User=@SERVICE_USER@$' "$ROOT/systemd/proxy-agent-health@.service")" -eq 1 ]]
 [[ "$(grep -c '^Requires=proxy-agent@%i.service$' "$ROOT/systemd/proxy-agent-health@.service")" -eq 1 ]]
 [[ "$(grep -c '^Type=simple$' "$ROOT/systemd-user/proxy-agent.service")" -eq 1 ]]
-[[ "$(grep -c '^ExecStart=%h/.local/bin/proxy-ctl run$' "$ROOT/systemd-user/proxy-agent.service")" -eq 1 ]]
+[[ "$(grep -c '^ExecStart=@BIN@/proxy-ctl run$' "$ROOT/systemd-user/proxy-agent.service")" -eq 1 ]]
+[[ "$(grep -c '^Environment=PA_STATE_DIR=%t/proxy-agent/run$' "$ROOT/systemd-user/proxy-agent.service")" -eq 1 ]]
 [[ "$(grep -c '^ProtectSystem=strict$' "$ROOT/systemd-user/proxy-agent.service")" -eq 1 ]]
-[[ "$(grep -c '^ExecStart=%h/.local/bin/proxy-ctl --profile %i run$' "$ROOT/systemd-user/proxy-agent@.service")" -eq 1 ]]
+[[ "$(grep -c '^ExecStart=@BIN@/proxy-ctl --profile %i run$' "$ROOT/systemd-user/proxy-agent@.service")" -eq 1 ]]
+[[ "$(grep -c '^Environment=PA_STATE_DIR=%t/proxy-agent/run/%i$' "$ROOT/systemd-user/proxy-agent@.service")" -eq 1 ]]
 [[ "$(grep -c '^Requires=proxy-agent@%i.service$' "$ROOT/systemd-user/proxy-agent-health@.service")" -eq 1 ]]
 
 LINK_DIR="$TMP/bin"
