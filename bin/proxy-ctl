@@ -106,37 +106,31 @@ cmd_test() {
 }
 cmd_diagnose() {
   echo '== proxy-agent diagnosis =='
-  for c in ssh autossh curl ss; do
-    command -v "$c" >/dev/null 2>&1 && printf 'OK    %s\n' "$c" || printf 'MISS  %s\n' "$c"
-  done
+  case "$BACKEND" in
+    ssh-socks)
+      for c in ssh autossh curl ss; do
+        command -v "$c" >/dev/null 2>&1 && printf 'OK    %s\n' "$c" || printf 'MISS  %s\n' "$c"
+      done
+      ;;
+    local-endpoint)
+      for c in curl; do
+        command -v "$c" >/dev/null 2>&1 && printf 'OK    %s\n' "$c" || printf 'MISS  %s\n' "$c"
+      done
+      ;;
+    *)
+      command -v curl >/dev/null 2>&1 && echo 'OK    curl' || echo 'MISS  curl'
+      ;;
+  esac
   [[ "${HTTP_ENABLED:-false}" != "true" ]] || { command -v privoxy >/dev/null 2>&1 && echo 'OK    privoxy' || echo 'MISS  privoxy'; }
   echo "profile: ${PROFILE_NAME:-default}"
   echo "config: $PA_CONFIG"
   echo "backend: $BACKEND"
   echo "endpoint: $(backend_endpoint 2>/dev/null || printf unavailable)"
   echo "capabilities: $(backend_capabilities | tr '\n' ' ')"
-  if [[ -n "${REMOTE_HOST:-}" && "${REMOTE_HOST:-}" != *example.com && "${REMOTE_HOST:-}" != 'your-ssh-host' ]]; then
+  if [[ "$BACKEND" == 'ssh-socks' && -n "${REMOTE_HOST:-}" && "${REMOTE_HOST:-}" != *example.com && "${REMOTE_HOST:-}" != 'your-ssh-host' ]]; then
     getent hosts "$REMOTE_HOST" || warn "cannot resolve $REMOTE_HOST"
   fi
   backend_status >/dev/null 2>&1 || warn "backend '$BACKEND' reports stopped/unhealthy"
-}
-ipv4_to_int() {
-  local IFS=.
-  local a b c d
-  read -r a b c d <<< "$1"
-  printf '%u\n' $(( (a << 24) | (b << 16) | (c << 8) | d ))
-}
-cidr_contains() {
-  local ip="$1" cidr="$2" network prefix mask base value
-  [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
-  [[ "$cidr" =~ ^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/([0-9]+)$ ]] || return 1
-  network="${BASH_REMATCH[1]}"
-  prefix="${BASH_REMATCH[2]}"
-  (( prefix >= 0 && prefix <= 32 )) || return 1
-  base="$(ipv4_to_int "$network")"
-  value="$(ipv4_to_int "$ip")"
-  if (( prefix == 0 )); then mask=0; else mask=$(( (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF )); fi
-  (( (base & mask) == (value & mask) ))
 }
 cmd_env() {
   if [[ "${1:-}" == '--off' ]]; then
