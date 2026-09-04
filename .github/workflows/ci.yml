@@ -45,6 +45,8 @@ jobs:
         run: bash tests/control-plane-schema-smoke.sh
       - name: Control API smoke
         run: bash tests/control-api-smoke.sh
+      - name: Control API validation smoke
+        run: bash tests/control-api-validation-smoke.sh
       - name: Control API error-path smoke
         run: bash tests/control-api-errors-smoke.sh
       - name: Agent Environment smoke
@@ -53,6 +55,8 @@ jobs:
         run: bash tests/revision-store-smoke.sh
       - name: Reconciler smoke
         run: bash tests/reconciler-smoke.sh
+      - name: Reconciler pin smoke
+        run: bash tests/reconcile-pin-smoke.sh
       - name: CLI exec smoke
         run: bash tests/cli-exec-smoke.sh
       - name: Backend contract smoke
