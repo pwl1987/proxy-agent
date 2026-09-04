@@ -1,0 +1,462 @@
+# proxy-agent 下一阶段架构设计
+
+本文不是立即重写清单，而是冻结下一阶段的架构方向，避免继续在 Shell CLI 上无限堆功能。
+
+## 一、结论
+
+当前 `proxy-agent` 的 Linux Shell 控制平面已经适合作为 **0.2.x 稳定基线**：Backend、Adapter、Route、Health、Profile、systemd、rootless、container、TUI、CI/CD 均已有正式边界。
+
+下一阶段不再以“增加更多 CLI 子命令”为主，而是逐步把控制平面提升为：
+
+```text
+                    ┌─────────────────────────────┐
+                    │      proxy-agent control     │
+                    │          daemon/API          │
+                    ├──────────────┬──────────────┤
+                    │ desired      │ observed     │
+                    │ config/state │ runtime/state │
+                    ├──────────────┴──────────────┤
+                    │ reconciler / lifecycle       │
+                    │ health / routing / audit     │
+                    └──────────────┬──────────────┘
+                                   │
+                    ┌──────────────┼──────────────┐
+                    │              │              │
+                  CLI            TUI            Web UI
+                    │              │              │
+                    └──────────────┴──────────────┘
+                                   │
+                    ┌──────────────┴──────────────┐
+                    │ backend / adapter / runtime │
+                    └─────────────────────────────┘
+```
+
+核心原则：**一个控制平面、多个操作入口、多个运行时、多个平台。**
+
+## 二、为什么现在不直接重写
+
+当前 Shell 实现已经把真正重要的领域模型暴露出来了：
+
+- backend lifecycle
+- capabilities
+- ownership
+- route policy
+- profile
+- health semantics
+- desired/active runtime state
+- systemd/rootless/container lifecycle
+
+这些边界应先冻结，再决定是否迁移实现语言。
+
+直接把现有 Shell 一次性重写成 Go/Rust，会同时改变行为、安装方式、配置、故障语义和 CI，回归面过大。
+
+因此采用“**先协议化，再替换实现**”策略：
+
+1. 0.2.x：继续维护 Shell reference implementation。
+2. 0.3.x：定义本地 control API 与 typed config model。
+3. 0.4.x：CLI/TUI 优先切到 API；Shell 保留兼容入口。
+4. 0.5.x 以后：根据跨平台需求决定是否把 daemon 核心迁移到 Go/Rust。
+
+## 三、Web UI 的正确位置
+
+Web UI 建议增加，但不是简单把 `proxy-agent.conf` 做成网页文本编辑器。
+
+正确操作流应为：
+
+```text
+查看当前状态
+   ↓
+创建配置草稿
+   ↓
+Schema 校验
+   ↓
+显示 Diff
+   ↓
+执行 Apply
+   ↓
+启动/重载 Backend
+   ↓
+Liveness Gate
+   ↓
+可选 Network Health Gate
+   ↓
+记录 revision + audit event
+```
+
+Web UI 第一版只负责：
+
+- Profile 管理
+- Backend/Adapter 选择
+- endpoint 与监听配置
+- Route 规则编辑
+- Health 目标编辑
+- 查看状态/健康/日志
+- Apply、Restart、Rollback
+- 导出配置
+
+不要在第一版做：
+
+- 任意 Shell 执行
+- 直接编辑私钥
+- 默认远程公网管理
+- 多租户
+- 复杂 RBAC 平台化
+
+## 四、配置模型必须从“可执行 Shell”升级为“类型化数据”
+
+当前配置通过 Shell `source` 加载，已有 ownership/mode 保护，但其本质仍然是可执行文本。
+
+下一阶段应定义 canonical typed configuration：
+
+```text
+Config Schema
+   ├─ metadata
+   ├─ backend
+   ├─ adapter
+   ├─ listeners
+   ├─ routes
+   ├─ integrations
+   ├─ health
+   └─ security
+```
+
+建议：
+
+- JSON Schema：作为校验与 Web API 的机器模型。
+- TOML：作为主要人工配置格式。
+- 现有 `.conf`：作为过渡兼容格式。
+
+迁移期间，CLI 可以将旧 `.conf` 解析为内部 typed model，再统一执行 validation 和 apply。
+
+## 五、从命令式控制转向 Desired / Observed State
+
+当前：
+
+```text
+proxy-ctl start
+proxy-ctl stop
+proxy-ctl restart
+```
+
+下一阶段：
+
+```text
+Desired State
+    ↓
+Reconciler
+    ↓
+Observed State
+    ↓
+Health / Failure
+    ↓
+再协调
+```
+
+例如 Backend 异常退出：
+
+```text
+desired=running
+observed=dead
+     ↓
+bounded recovery
+     ↓
+observed=ready
+```
+
+这样 CLI、TUI、Web UI、systemd、container 就不再各自实现一套生命周期逻辑。
+
+## 六、配置变更必须有 revision
+
+所有 Apply/Upgrade/Rollback 都应生成：
+
+```text
+revision
+previous_revision
+timestamp
+actor
+change_summary
+validation_result
+health_result
+```
+
+Web UI 不应直接覆盖生产配置，而应提交一个 revision。
+
+这样可以实现：
+
+```text
+v12 → v13 → v14
+          ↓
+        rollback
+          ↓
+         v13
+```
+
+同时避免两个客户端同时写配置产生 lost update。
+
+## 七、远程 Web 管理的安全边界
+
+默认策略必须是：
+
+```text
+默认：只监听 localhost / Unix socket
+
+远程管理：显式开启
+         ↓
+    TLS / 身份认证
+         ↓
+      Audit Log
+```
+
+尤其禁止把“Web 配置页面”直接绑定 `0.0.0.0` 并且无认证。
+
+SSH、VPN、Tailscale、反向代理等都可以作为远程管理的安全通道，但控制面本身仍然要有独立认证边界。
+
+私钥、代理认证信息等 Secret：
+
+- 页面默认只显示存在/已配置，不回显原文。
+- Apply 时支持 secret reference，而不是把私钥作为普通配置字段保存。
+- 后续实现统一 secret provider 接口：file / env / OS keyring / platform credential store。
+
+## 八、跨系统路线
+
+跨系统不等于把所有 Shell 脚本复制到 Windows/macOS。
+
+推荐把系统相关层收敛成：
+
+```text
+                Control API
+                     │
+        ┌────────────┼────────────┐
+        │            │            │
+      Linux        macOS       Windows
+      systemd      launchd      Windows Service
+      XDG/root     launchd      Service profile
+      container    container    container/WSL
+```
+
+第一优先级：Linux。
+
+第二优先级：macOS + Windows 的 client/controller。
+
+第三阶段再决定是否提供原生 daemon。
+
+如果确实需要单文件跨平台 daemon，届时优先评估 Go/Rust；Go 的纯 Go 程序可直接通过 `GOOS/GOARCH` 交叉编译，因此尤其适合这一类控制面工具。
+
+## 九、CLI/TUI 的升级方向
+
+当前 TUI 是 CLI 的薄壳，这个边界正确，但随着 Web/API 出现，应变成：
+
+```text
+CLI ─┐
+TUI ─┼─→ local control API ─→ daemon
+Web ─┘
+```
+
+同时保留：
+
+```text
+proxy-ctl validate
+proxy-ctl route ...
+proxy-ctl status --json=v1
+proxy-ctl status --json=v2
+```
+
+机器接口继续向后兼容。
+
+建议增加：
+
+```text
+proxy-ctl exec <command...>
+```
+
+让用户可以直接在代理环境中执行命令，减少手工 `eval "$(proxy-ctl env)"` 带来的操作复杂度。
+
+## 十、健康与可观测性
+
+现有 health-history 已足够支撑单机运维，但下一阶段应逐步增加：
+
+- probe 类型
+- 目标
+- 延迟
+- DNS/连接/TLS/HTTP 错误分类
+- 连续失败次数
+- 最近一次恢复
+- backend restart 次数
+- 当前 generation/revision
+
+并提供：
+
+```text
+/health
+/status
+/metrics
+/events
+```
+
+其中 `/metrics` 可采用 Prometheus 文本格式，JSON API 保持给 Web/UI 使用。
+
+## 十一、Backend contract 继续演进
+
+现有 capability 已经是正确方向，但下一版应正式版本化：
+
+```text
+contract_version
+capabilities[]
+transport
+lifecycle
+management
+```
+
+例如：
+
+```json
+{
+  "contract_version": 1,
+  "capabilities": ["socks5", "stream_proxy"],
+  "managed": true
+}
+```
+
+这样 Web UI 可以根据 capability 自动决定显示哪些配置项，而不用写死 backend 名称。
+
+## 十二、升级系统的最终形态
+
+当前升级已经有失败恢复逻辑，但仍是“覆盖式安装”。
+
+长期目标应改为版本目录 + 原子切换：
+
+```text
+/opt/proxy-agent/releases/0.2.0
+/opt/proxy-agent/releases/0.3.0
+/opt/proxy-agent/current -> 0.3.0
+```
+
+升级：
+
+```text
+install 0.3.0
+    ↓
+validate
+    ↓
+health gate
+    ↓
+switch current atomically
+    ↓
+restart/reconcile
+```
+
+失败：
+
+```text
+current -> 0.2.0
+```
+
+这比覆盖原目录更适合真正的生产回滚。
+
+## 十三、推荐版本路线
+
+### 0.2.0
+
+目标：稳定 Linux reference implementation。
+
+必须完成：
+
+- CI 全绿
+- container smoke
+- real backend smoke
+- release tag
+- GHCR image
+- rollback gate
+- 中文运维文档
+
+### 0.3.x
+
+目标：控制面协议化。
+
+增加：
+
+- typed config schema
+- local API
+- revision/audit
+- `/status` `/health` `/metrics`
+- `proxy-ctl exec`
+- TUI API client
+
+### 0.4.x
+
+目标：Web 控制面。
+
+增加：
+
+- Web UI
+- Draft → Validate → Diff → Apply
+- Rollback
+- capability-driven forms
+- local-only default
+
+### 0.5.x
+
+目标：跨平台。
+
+增加：
+
+- macOS runtime adapter
+- Windows runtime adapter
+- platform-specific installers
+- cross-platform CI
+
+### 1.0
+
+目标：稳定 control-plane API。
+
+此时再决定核心 daemon 是否从 Shell 迁移到 Go/Rust。
+
+## 十四、Git 分支策略
+
+不建议重新建立长期 `develop` 分支。
+
+推荐：
+
+```text
+main
+ │
+ ├─ feat/*
+ ├─ fix/*
+ └─ release/*
+```
+
+规则：
+
+- `main` 永远可发布。
+- feature branch 短命。
+- PR 合并后自动删除 branch。
+- 发布使用 tag，不建立长期 release branch。
+- 重要版本通过 release gate 决定，而不是依赖分支长期漂移。
+
+GitHub 官方支持通过 branch protection / ruleset 要求 PR、状态检查、分支最新、线性历史等；在高并发协作时再引入 merge queue。
+
+## 十五、当前 Merge 决策
+
+PR #15 现在**不要立即合并**。
+
+原因不是架构方向错误，而是最新 PR CI 的 container gate 刚发现了真实运行时问题，已经修复一次，还需要等待新的 CI 证明修复有效。
+
+正确顺序：
+
+```text
+Container CI green
+      ↓
+全套 PR checks green
+      ↓
+确认 real backend smoke
+      ↓
+合并 PR #15 → main
+      ↓
+删除 feat/release-engineering
+      ↓
+main 上验证 v0.2.0 release candidate
+      ↓
+tag v0.2.0
+```
+
+这一步完成后，不再把 `feat/release-engineering` 当长期开发主线。
