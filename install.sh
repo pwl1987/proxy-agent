@@ -21,14 +21,20 @@ ln -sf "$PREFIX/bin/proxy-agent-version" "$BIN/proxy-agent-version"
 
 install -d -m 0755 /etc/systemd/system
 sed "s#@PREFIX@#$PREFIX#g" "$ROOT/systemd/proxy-agent.service" >/etc/systemd/system/proxy-agent.service
+sed "s#@PREFIX@#$PREFIX#g" "$ROOT/systemd/proxy-agent@.service" >/etc/systemd/system/proxy-agent@.service
 sed "s#@PREFIX@#$PREFIX#g" "$ROOT/systemd/proxy-agent-health.service" >/etc/systemd/system/proxy-agent-health.service
+sed "s#@PREFIX@#$PREFIX#g" "$ROOT/systemd/proxy-agent-health@.service" >/etc/systemd/system/proxy-agent-health@.service
 install -m 0644 "$ROOT/systemd/proxy-agent-health.timer" /etc/systemd/system/proxy-agent-health.timer
+install -m 0644 "$ROOT/systemd/proxy-agent-health@.timer" /etc/systemd/system/proxy-agent-health@.timer
 
 if command -v systemctl >/dev/null 2>&1; then systemctl daemon-reload; systemctl enable proxy-agent.service >/dev/null; fi
 
 echo "Installed proxy-agent to $PREFIX"
 echo "Config: $ETC/proxy-agent.conf"
 echo "Profiles: $ETC/profiles"
+echo "Default service: proxy-agent.service"
+echo "Profile service: proxy-agent@<name>.service"
 echo "Next: edit the config, then run: proxy-ctl doctor && systemctl start proxy-agent"
 echo "TUI: proxy-ctl tui"
 echo "Optional health loop: systemctl enable --now proxy-agent-health.timer"
+echo "Profile health: systemctl enable --now proxy-agent-health@<name>.timer"
