@@ -45,6 +45,7 @@
         {"method": "GET", "path": "/api/v1/config", "kind": "config", "mutating": false},
         {"method": "GET", "path": "/api/v1/events", "kind": "events", "mutating": false},
         {"method": "GET", "path": "/api/v1/revisions", "kind": "revision", "mutating": false},
+        {"method": "GET", "path": "/api/v1/revisions/{revision}", "kind": "revision", "mutating": false},
         {"method": "POST", "path": "/api/v1/validate", "kind": "validate", "mutating": false},
         {"method": "POST", "path": "/api/v1/revisions", "kind": "revision", "mutating": true, "concurrency": "if_match_revision"},
         {"method": "POST", "path": "/api/v1/apply", "kind": "apply", "mutating": true, "concurrency": "if_match_revision"},
