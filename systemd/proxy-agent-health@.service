@@ -1,5 +1,6 @@
 [Unit]
 Description=proxy-agent health check for profile %i
+Requires=proxy-agent@%i.service
 After=proxy-agent@%i.service
 
 [Service]
