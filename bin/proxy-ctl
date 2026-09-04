@@ -8,16 +8,13 @@ source "$ROOT/lib/common.sh"
 source "$ROOT/lib/profile.sh"
 # shellcheck source=../lib/backend-capabilities.sh
 source "$ROOT/lib/backend-capabilities.sh"
-# shellcheck source=../backends/ssh-socks.sh
-source "$ROOT/backends/ssh-socks.sh"
 # shellcheck source=../adapters/privoxy.sh
 source "$ROOT/adapters/privoxy.sh"
 
 PROFILE_NAME="${PA_PROFILE:-}"
 if [[ "${1:-}" == "--profile" ]]; then
   [[ -n "${2:-}" ]] || die 'usage: proxy-ctl --profile <name> <command> [args]'
-  PROFILE_NAME="$2"
-  shift 2
+  PROFILE_NAME="$2"; shift 2
 fi
 
 if [[ -n "$PROFILE_NAME" ]]; then
@@ -32,18 +29,24 @@ if [[ -n "$PROFILE_NAME" ]]; then
   : "${HTTP_ENABLED:=false}"; : "${HTTP_BIND:=127.0.0.1}"; : "${HTTP_PORT:=8118}"; : "${HEALTH_TIMEOUT:=10}"
 fi
 
-backend_start() {
-  case "$BACKEND" in
-    ssh-socks) backend_ssh_socks_start ;;
-    *) die "unsupported backend: $BACKEND" ;;
-  esac
+backend_function_prefix() { printf 'backend_%s' "${1//-/_}"; }
+backend_load() {
+  local name="$BACKEND" file prefix
+  [[ "$name" =~ ^[A-Za-z0-9._-]+$ ]] || die "invalid backend name: $name"
+  file="$ROOT/backends/$name.sh"
+  [[ -r "$file" ]] || die "backend implementation not found: $file"
+  # shellcheck disable=SC1090
+  source "$file"
+  prefix="$(backend_function_prefix "$name")"
+  declare -F "${prefix}_start" >/dev/null || die "backend '$name' missing start contract"
+  declare -F "${prefix}_stop" >/dev/null || die "backend '$name' missing stop contract"
+  declare -F "${prefix}_status" >/dev/null || die "backend '$name' missing status contract"
 }
-backend_stop() {
-  case "$BACKEND" in
-    ssh-socks) backend_ssh_socks_stop ;;
-    *) die "unsupported backend: $BACKEND" ;;
-  esac
-}
+backend_load
+
+backend_start() { "$(backend_function_prefix "$BACKEND")_start"; }
+backend_stop() { "$(backend_function_prefix "$BACKEND")_stop"; }
+backend_status() { "$(backend_function_prefix "$BACKEND")_status"; }
 adapter_start() { [[ "${HTTP_ENABLED:-false}" == "true" ]] && adapter_privoxy_start; }
 adapter_stop() { [[ "${HTTP_ENABLED:-false}" == "true" ]] && adapter_privoxy_stop; }
 cmd_start() {
@@ -55,11 +58,11 @@ cmd_stop() { adapter_stop; backend_stop; log 'stopped'; }
 cmd_restart() { cmd_stop; sleep 1; cmd_start; }
 cmd_status() {
   printf 'proxy-agent\n  profile: %s\n  backend: %s\n' "${PROFILE_NAME:-default}" "$BACKEND"
-  if backend_ssh_socks_status 2>/dev/null; then echo '  SOCKS:  listening'; else echo '  SOCKS:  not listening'; fi
+  if backend_status 2>/dev/null; then echo '  SOCKS:  listening'; else echo '  SOCKS:  not listening'; fi
   if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then
     if adapter_privoxy_status 2>/dev/null; then echo '  HTTP:   listening'; else echo '  HTTP:   not listening'; fi
   else echo '  HTTP:   disabled'; fi
-  printf '  remote: %s@%s:%s\n' "$REMOTE_USER" "$REMOTE_HOST" "${REMOTE_PORT:-22}"
+  printf '  remote: %s@%s:%s\n' "${REMOTE_USER:-}" "${REMOTE_HOST:-}" "${REMOTE_PORT:-22}"
 }
 curl_via_socks() { curl -fsS --connect-timeout "$HEALTH_TIMEOUT" --max-time "$((HEALTH_TIMEOUT + 5))" --socks5-hostname "${SOCKS_BIND}:${SOCKS_PORT}" "$1" >/dev/null; }
 curl_via_http() { curl -fsS --connect-timeout "$HEALTH_TIMEOUT" --max-time "$((HEALTH_TIMEOUT + 5))" --proxy "http://${HTTP_BIND}:${HTTP_PORT}" "$1" >/dev/null; }
@@ -78,14 +81,12 @@ cmd_test() {
 }
 cmd_diagnose() {
   echo '== proxy-agent diagnosis =='
-  for c in ssh autossh curl ss; do
-    if command -v "$c" >/dev/null 2>&1; then printf 'OK    %s\n' "$c"; else printf 'MISS  %s\n' "$c"; fi
-  done
-  if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then command -v privoxy >/dev/null 2>&1 && echo 'OK    privoxy' || echo 'MISS  privoxy'; fi
+  for c in ssh autossh curl ss; do command -v "$c" >/dev/null 2>&1 && printf 'OK    %s\n' "$c" || printf 'MISS  %s\n' "$c"; done
+  [[ "${HTTP_ENABLED:-false}" != "true" ]] || { command -v privoxy >/dev/null 2>&1 && echo 'OK    privoxy' || echo 'MISS  privoxy'; }
   echo "profile: ${PROFILE_NAME:-default}"; echo "config: $PA_CONFIG"; echo "backend: $BACKEND"
   echo "capabilities: $(backend_capabilities | tr '\n' ' ')"; echo "SOCKS: ${SOCKS_BIND}:${SOCKS_PORT}"; echo "HTTP:  ${HTTP_ENABLED:-false} ${HTTP_BIND}:${HTTP_PORT}"
-  if [[ -n "${REMOTE_HOST:-}" && "${REMOTE_HOST:-}" != *example.com ]]; then getent hosts "$REMOTE_HOST" || warn "cannot resolve $REMOTE_HOST"; fi
-  port_listening "$SOCKS_PORT" || warn 'SOCKS listener is down'
+  if [[ -n "${REMOTE_HOST:-}" && "${REMOTE_HOST:-}" != *example.com && "${REMOTE_HOST:-}" != 'your-ssh-host' ]]; then getent hosts "$REMOTE_HOST" || warn "cannot resolve $REMOTE_HOST"; fi
+  backend_status >/dev/null 2>&1 || warn "backend '$BACKEND' reports stopped/unhealthy"
 }
 ipv4_to_int() { local IFS=.; local a b c d; read -r a b c d <<< "$1"; printf '%u\n' $(( (a << 24) | (b << 16) | (c << 8) | d )); }
 cidr_contains() {
@@ -93,8 +94,7 @@ cidr_contains() {
   [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
   [[ "$cidr" =~ ^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/([0-9]+)$ ]] || return 1
   network="${BASH_REMATCH[1]}"; prefix="${BASH_REMATCH[2]}"; (( prefix >= 0 && prefix <= 32 )) || return 1
-  base="$(ipv4_to_int "$network")"; value="$(ipv4_to_int "$ip")"
-  if (( prefix == 0 )); then mask=0; else mask=$(( (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF )); fi
+  base="$(ipv4_to_int "$network")"; value="$(ipv4_to_int "$ip")"; if (( prefix == 0 )); then mask=0; else mask=$(( (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF )); fi
   (( (base & mask) == (value & mask) ))
 }
 cmd_route() {
@@ -107,12 +107,8 @@ cmd_route() {
 }
 cmd_env() {
   if [[ "${1:-}" == '--off' ]]; then printf 'unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy NO_PROXY no_proxy\n'; return; fi
-  local no_proxy="${DIRECT_CIDRS:-}"
-  [[ -z "${DIRECT_DOMAINS:-}" ]] || no_proxy="${no_proxy:+${no_proxy},}${DIRECT_DOMAINS}"
-  [[ -z "${NO_PROXY_EXTRA:-}" ]] || no_proxy="${no_proxy:+${no_proxy},}${NO_PROXY_EXTRA}"
-  if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then
-    local http="http://${HTTP_BIND}:${HTTP_PORT}"; printf 'export HTTP_PROXY=%q HTTPS_PROXY=%q http_proxy=%q https_proxy=%q\n' "$http" "$http" "$http" "$http"
-  else printf 'unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy\n'; fi
+  local no_proxy="${DIRECT_CIDRS:-}"; [[ -z "${DIRECT_DOMAINS:-}" ]] || no_proxy="${no_proxy:+${no_proxy},}${DIRECT_DOMAINS}"; [[ -z "${NO_PROXY_EXTRA:-}" ]] || no_proxy="${no_proxy:+${no_proxy},}${NO_PROXY_EXTRA}"
+  if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then local http="http://${HTTP_BIND}:${HTTP_PORT}"; printf 'export HTTP_PROXY=%q HTTPS_PROXY=%q http_proxy=%q https_proxy=%q\n' "$http" "$http" "$http" "$http"; else printf 'unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy\n'; fi
   local socks="socks5h://${SOCKS_BIND}:${SOCKS_PORT}"; printf 'export ALL_PROXY=%q all_proxy=%q\n' "$socks" "$socks"; printf 'export NO_PROXY=%q no_proxy=%q\n' "$no_proxy" "$no_proxy"
 }
 cmd_integration() { exec "$ROOT/bin/proxy-agent-integration" "${1:-}"; }
@@ -129,8 +125,7 @@ cmd_doctor() {
   if [[ "${HTTP_ENABLED:-false}" == "true" ]]; then [[ "$HTTP_PORT" =~ ^[0-9]+$ && "$HTTP_PORT" -ge 1 && "$HTTP_PORT" -le 65535 ]] || { warn 'invalid HTTP_PORT'; rc=1; }; command -v privoxy >/dev/null 2>&1 || { warn 'HTTP_ENABLED=true but privoxy is missing'; rc=1; }; fi
   return "$rc"
 }
-usage() {
-  cat <<'EOF'
+usage() { cat <<'EOF'
 Usage: proxy-ctl [--profile NAME] <command>
   start                  start configured backend and adapters
   stop                   stop adapters and backend
