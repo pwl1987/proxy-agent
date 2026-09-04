@@ -73,7 +73,7 @@ jobs:
           grep -q '^ExecStart=@BIN@/proxy-ctl --profile %i run$' systemd-user/proxy-agent@.service
           grep -q '^Environment=PA_STATE_DIR=%t/proxy-agent/run/%i$' systemd-user/proxy-agent@.service
           grep -q '^ExecStart=@BIN@/proxy-agent-health --profile %i$' systemd-user/proxy-agent-health@.service
-          grep -q '^Unit=proxy-agent-health@%i.service$' systemd-user/proxy-agent-health@.timer
+          grep -q '^Unit=proxy-agent-health@%i.service$' systemd-user/proxy-agent-health@%i.timer
       - name: Functional smoke suite
         run: bash tests/smoke.sh
       - name: TUI guard smoke
@@ -113,7 +113,9 @@ jobs:
             set -eu
             test "$(id -u)" -ne 0
             /opt/proxy-agent/bin/proxy-agent-version
-            PA_CONFIG=/etc/proxy-agent/proxy-agent.conf.example /opt/proxy-agent/bin/proxy-ctl status --json >/dev/null
+            cp /etc/proxy-agent/proxy-agent.conf.example /tmp/proxy-agent.conf
+            chmod 0600 /tmp/proxy-agent.conf
+            PA_CONFIG=/tmp/proxy-agent.conf /opt/proxy-agent/bin/proxy-ctl status --json >/dev/null
           '
       - name: Verify container entrypoint contract
         run: |
