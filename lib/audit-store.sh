@@ -24,6 +24,14 @@ audit_lock_is_stale() {
   if ! current="$(audit_proc_starttime "$pid" 2>/dev/null)"; then return 0; fi
   [[ "$current" != "$start" ]]
 }
+audit_lock_reclaim() {
+  local lock="$(audit_lock_dir)" stale="${lock}.stale.$$.$RANDOM"
+  if mv "$lock" "$stale" 2>/dev/null; then
+    rm -rf "$stale"
+    return 0
+  fi
+  return 1
+}
 audit_lock_acquire() {
   local dir="$(audit_dir)" lock="$(audit_lock_dir)" now
   mkdir -p "$dir"
@@ -36,7 +44,7 @@ audit_lock_acquire() {
       return 0
     fi
     if audit_lock_is_stale; then
-      rm -rf "$lock"
+      audit_lock_reclaim || true
       continue
     fi
     sleep 0.05
@@ -44,7 +52,15 @@ audit_lock_acquire() {
   printf 'audit store is locked: %s\n' "$lock" >&2
   return 1
 }
-audit_lock_release() { rm -rf "$(audit_lock_dir)"; }
+audit_lock_release() {
+  local lock="$(audit_lock_dir)" pid start current
+  [[ -d "$lock" ]] || return 0
+  pid="$(cat "$lock/pid" 2>/dev/null || true)"
+  start="$(cat "$lock/starttime" 2>/dev/null || true)"
+  current="$(audit_proc_starttime "$$" 2>/dev/null || true)"
+  [[ "$pid" == "$$" && -n "$start" && "$start" == "$current" ]] || return 1
+  rm -rf "$lock"
+}
 audit_append() {
   local event="${1:?event JSON required}"
   python3 - "$event" <<'PY'
