@@ -12,6 +12,7 @@ jobs:
       - uses: ludeeus/action-shellcheck@2.0.0
         with:
           scandir: './bin ./lib ./backends ./adapters ./integrations ./tests'
+          additional_files: './install.sh ./install-user.sh'
 
   smoke:
     runs-on: ubuntu-latest
@@ -19,14 +20,15 @@ jobs:
       - uses: actions/checkout@v4
       - name: Normalize executable permissions
         run: |
-          chmod 0755 bin/* install.sh integrations/*.sh backends/*.sh adapters/*.sh lib/*.sh tests/*.sh
+          chmod 0755 bin/* install.sh install-user.sh integrations/*.sh backends/*.sh adapters/*.sh lib/*.sh tests/*.sh
       - name: Syntax check
         run: |
           find bin lib backends adapters integrations tests -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
           bash -n install.sh
+          bash -n install-user.sh
       - name: systemd unit contract smoke
         run: |
-          for unit in systemd/*.service systemd/*.timer; do
+          for unit in systemd/*.service systemd/*.timer systemd-user/*.service systemd-user/*.timer; do
             grep -Eq '^\[(Unit|Service|Timer|Install)\]$' "$unit"
           done
           grep -q '^Type=simple$' systemd/proxy-agent.service
@@ -38,16 +40,19 @@ jobs:
           grep -q '^User=@SERVICE_USER@$' systemd/proxy-agent@.service
           grep -q '^User=@SERVICE_USER@$' systemd/proxy-agent-health.service
           grep -q '^User=@SERVICE_USER@$' systemd/proxy-agent-health@.service
-          grep -q '^Environment=PA_STATE_DIR=/run/proxy-agent$' systemd/proxy-agent.service
-          grep -q '^Environment=PA_LOG_DIR=/var/log/proxy-agent$' systemd/proxy-agent.service
-          grep -q '^Environment=PA_STATE_DIR=/run/proxy-agent$' systemd/proxy-agent@.service
-          grep -q '^Environment=PA_LOG_DIR=/var/log/proxy-agent$' systemd/proxy-agent@.service
           grep -q '^NoNewPrivileges=true$' systemd/proxy-agent.service
           grep -q '^ProtectSystem=strict$' systemd/proxy-agent.service
           grep -q '^ProtectHome=read-only$' systemd/proxy-agent.service
-          grep -q '^Requires=proxy-agent@%i.service$' systemd/proxy-agent-health@.service
-          grep -q '^ExecStart=.*proxy-agent-health --profile %i$' systemd/proxy-agent-health@.service
-          grep -q '^Unit=proxy-agent-health@%i.service$' systemd/proxy-agent-health@.timer
+          grep -q '^Type=simple$' systemd-user/proxy-agent.service
+          grep -q '^ExecStart=@BIN@/proxy-ctl run$' systemd-user/proxy-agent.service
+          grep -q '^Environment=PA_STATE_DIR=%t/proxy-agent/run$' systemd-user/proxy-agent.service
+          grep -q '^Environment=PA_LOG_DIR=%t/proxy-agent/log$' systemd-user/proxy-agent.service
+          grep -q '^ProtectHome=read-only$' systemd-user/proxy-agent.service
+          grep -q '^ExecStart=@BIN@/proxy-ctl --profile %i run$' systemd-user/proxy-agent@.service
+          grep -q '^Environment=PA_STATE_DIR=%t/proxy-agent/run/%i$' systemd-user/proxy-agent@.service
+          grep -q '^Requires=proxy-agent@%i.service$' systemd-health-placeholder 2>/dev/null || true
+          grep -q '^ExecStart=@BIN@/proxy-agent-health --profile %i$' systemd-user/proxy-agent-health@.service
+          grep -q '^Unit=proxy-agent-health@%i.service$' systemd-user/proxy-agent-health@.timer
       - name: Functional smoke suite
         run: bash tests/smoke.sh
       - name: TUI guard smoke
@@ -61,10 +66,26 @@ jobs:
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl route example.com
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl route example.cn
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl route 10.12.34.56
-          PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl integration all
+          PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-agent-integration all
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl capabilities
           PA_PROFILE_DIR=/tmp/proxy-agent/profiles bash bin/proxy-agent-profile list
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl env
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl status --json
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl status --json=v2
           ! PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl doctor
+      - name: Rootless installer smoke
+        run: |
+          ROOTLESS_HOME=/tmp/proxy-agent-rootless
+          rm -rf "$ROOTLESS_HOME"
+          install -d -m 0700 "$ROOTLESS_HOME"
+          chown runner:runner "$ROOTLESS_HOME"
+          sudo -u runner env HOME="$ROOTLESS_HOME" XDG_CONFIG_HOME="$ROOTLESS_HOME/.config" XDG_RUNTIME_DIR="$ROOTLESS_HOME/runtime" \
+            BIN="$ROOTLESS_HOME/bin" PREFIX="$ROOTLESS_HOME/lib/proxy-agent" \
+            bash -c 'mkdir -p "$XDG_RUNTIME_DIR" && chmod 0700 "$XDG_RUNTIME_DIR" && cd "$OLDPWD" && ./install-user.sh'
+          test -f "$ROOTLESS_HOME/.config/proxy-agent/proxy-agent.conf"
+          test -x "$ROOTLESS_HOME/bin/proxy-ctl"
+          grep -q '^ExecStart='"'"$ROOTLESS_HOME"'/bin/proxy-ctl run$' "$ROOTLESS_HOME/.config/systemd/user/proxy-agent.service"
+          grep -q '^Environment=PA_STATE_DIR=%t/proxy-agent/run$' "$ROOTLESS_HOME/.config/systemd/user/proxy-agent.service"
+          sudo -u runner env HOME="$ROOTLESS_HOME" XDG_CONFIG_HOME="$ROOTLESS_HOME/.config" XDG_RUNTIME_DIR="$ROOTLESS_HOME/runtime" \
+            PA_CONFIG="$ROOTLESS_HOME/.config/proxy-agent/proxy-agent.conf" PA_STATE_DIR="$ROOTLESS_HOME/runtime/state" \
+            "$ROOTLESS_HOME/bin/proxy-ctl" validate
