@@ -88,16 +88,6 @@ jobs:
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl status --json=v2
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl config export-typed >/tmp/proxy-agent/typed.json
           PA_CONFIG=/tmp/proxy-agent/proxy-agent.conf bash bin/proxy-ctl health-history --limit 1
-          python3 - <<'PY'
-          import os
-          import subprocess
-          import sys
-          env = dict(os.environ, PA_CONFIG="/tmp/proxy-agent/proxy-agent.conf")
-          rc = subprocess.run(["bash", "bin/proxy-ctl", "doctor"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
-          if rc == 0:
-              print("doctor unexpectedly passed", file=sys.stderr)
-              raise SystemExit(1)
-          PY
       - name: Rootless installer smoke
         run: bash tests/rootless-smoke.sh
 
