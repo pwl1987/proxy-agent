@@ -64,7 +64,14 @@ caps = json.loads((root / "capabilities.json").read_text())
 config = json.loads((root / "config.json").read_text())
 revisions = json.loads((root / "revisions0.json").read_text())
 metrics = (root / "metrics.txt").read_text()
-assert health == {"api_version": "v1", "data": {"status": "ok", "transport": "ready"}, "kind": "health"}
+assert health["api_version"] == "v1"
+assert health["kind"] == "health"
+assert health["data"]["transport"] == "ready"
+assert health["data"]["status"] == "degraded"
+assert health["data"]["readiness"] == "not_ready"
+assert health["data"]["desired_revision"] == 0
+assert health["data"]["observed_revision"] == 0
+assert health["data"]["runtime"]["backend"] == "stopped"
 assert status["data"]["backend"] == "local-endpoint"
 assert status["data"]["current_revision"] == 0
 assert status["data"]["desired_revision"] == 0
@@ -108,6 +115,17 @@ assert obj["data"]["revision"] == 1
 assert obj["data"]["desired_revision"] == 1
 assert obj["data"]["reconcile"]["status"] == "activated"
 assert obj["data"]["reconcile"]["observed_revision"] == 1
+PY
+
+curl_unix /api/v1/health >"$TMP/health-applied.json"
+python3 - "$TMP/health-applied.json" <<'PY'
+import json, sys
+obj=json.load(open(sys.argv[1]))
+assert obj["data"]["status"] == "ok", obj
+assert obj["data"]["readiness"] == "ready", obj
+assert obj["data"]["desired_revision"] == 1, obj
+assert obj["data"]["observed_revision"] == 1, obj
+assert obj["data"]["runtime"]["backend"] == "listening", obj
 PY
 
 curl_unix /api/v1/status >"$TMP/status-applied.json"
