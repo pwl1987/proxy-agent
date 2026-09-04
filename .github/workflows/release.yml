@@ -28,7 +28,7 @@ jobs:
             exit 1
           }
           find bin lib backends adapters integrations tests -type f -name '*.sh' -print0 \
-            | xargs -0 -r bash -n
+            | xargs -0 -r -n1 bash -n
           bash -n install.sh install-user.sh upgrade.sh upgrade-user.sh
 
       - name: Build container image
