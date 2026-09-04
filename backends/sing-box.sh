@@ -43,11 +43,12 @@ backend_sing_box_pid() {
 }
 
 backend_sing_box_process_matches() {
-  local pid="$1" cmdline exe process_uid current_uid
+  local pid="$1" cmdline exe process_uid current_uid config
   [[ -r "/proc/$pid/cmdline" && -e "/proc/$pid/exe" ]] || return 1
   cmdline="$(tr '\0' ' ' </proc/"$pid"/cmdline 2>/dev/null || true)"
+  config="$(expand_home "$SING_BOX_CONFIG")"
   [[ "$cmdline" == *"sing-box run"* ]] || return 1
-  [[ "$cmdline" == *"-c ${SING_BOX_CONFIG}"* || "$cmdline" == *"-c=${SING_BOX_CONFIG}"* ]] || return 1
+  [[ "$cmdline" == *"-c $config"* || "$cmdline" == *"-c=$config"* ]] || return 1
   exe="$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)"
   [[ "$exe" == */sing-box ]] || return 1
   process_uid="$(awk '/^Uid:/{print $2}' "/proc/$pid/status" 2>/dev/null || true)"
@@ -61,7 +62,7 @@ backend_sing_box_process_identity() {
   pid="$(backend_sing_box_pid 2>/dev/null || true)"
   [[ -n "$pid" ]] || return 1
   exe="$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)"
-  printf 'sing-box:%s exe=%s uid=%s config=%s socks=%s:%s' "$pid" "${exe##*/}" "$(id -u)" "$SING_BOX_CONFIG" "$SOCKS_BIND" "$SOCKS_PORT"
+  printf 'sing-box:%s exe=%s uid=%s config=%s socks=%s:%s' "$pid" "${exe##*/}" "$(id -u)" "$(expand_home "$SING_BOX_CONFIG")" "$SOCKS_BIND" "$SOCKS_PORT"
 }
 
 backend_sing_box_validate() {
@@ -78,7 +79,7 @@ backend_sing_box_start() {
   backend_sing_box_validate
   mkdir -p "$PA_STATE_DIR" "$PA_LOG_DIR"
 
-  local existing_pid pid_file config binary
+  local existing_pid pid_file config binary pid
   pid_file="$(backend_sing_box_pid_file)"
   existing_pid="$(backend_sing_box_pid 2>/dev/null || true)"
   if [[ -n "$existing_pid" ]]; then
@@ -92,7 +93,7 @@ backend_sing_box_start() {
   binary="${SING_BOX_BIN:-sing-box}"
   config="$(expand_home "$SING_BOX_CONFIG")"
   "$binary" run -c "$config" >>"$PA_LOG_DIR/sing-box.log" 2>&1 &
-  local pid=$!
+  pid=$!
   printf '%s\n' "$pid" >"$pid_file"
 
   for _ in {1..20}; do
