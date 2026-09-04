@@ -1,6 +1,6 @@
 # Current status
 
-The v2 foundation and first control-plane hardening gate are complete. The project now has a backend-neutral lifecycle contract, named profiles, profile-aware systemd services, strict configuration validation, routing policy inspection, health recovery, and a common machine-facing status surface.
+The v2 foundation, configuration gate, and runtime/lifecycle hardening gate are implemented. The control plane now has explicit backend ownership semantics and a manager-safe runtime state model.
 
 Implemented:
 
@@ -8,22 +8,26 @@ Implemented:
 - local HTTP/SOCKS endpoint backend
 - optional Privoxy HTTP adapter
 - backend lifecycle contract: `validate/start/stop/status/endpoint`
+- backend ownership contract: `managed/pid/process_identity`
 - backend capability contract
 - named profiles and per-profile state
 - CLI + TUI profile selection
 - ordered route policy and route explanation
 - shell environment export with `socks5h`
-- health check and timed recovery
+- health check, timed recovery, and runtime state synchronization
 - Git / Docker / pip / npm integration emitters
-- systemd foreground ownership with per-profile units
+- systemd foreground-free service ownership through `proxy-ctl run`
+- profile-safe SSH process ownership and port-collision refusal
 - strict configuration validation through `proxy-ctl validate`
+- runtime state schema v2 through `proxy-ctl status --json=v2`
 - CI ShellCheck + syntax + systemd contract + functional smoke coverage
 
 ## Current engineering gate
 
-The next phase is runtime-state formalization and lifecycle ownership hardening:
+The next phase is deployment hardening before adding heavyweight proxy engines:
 
-1. expand the machine-readable status schema without breaking schema v1 consumers;
-2. record health timestamps, adapter state, and managed process identity;
-3. make interactive backend stop operations profile-safe without broad process matching;
-4. then move into rootless/least-privilege deployment and additional proxy engines.
+1. verify privileged configuration ownership and file modes;
+2. introduce least-privilege/rootless execution paths;
+3. strengthen process identity and listener verification;
+4. add atomic runtime-state locking and stale-state cleanup;
+5. then evaluate sing-box, mihomo, and HTTP CONNECT backends against the stable contract.
