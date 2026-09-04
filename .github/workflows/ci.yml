@@ -45,6 +45,8 @@ jobs:
         run: bash tests/control-api-smoke.sh
       - name: Control API error-path smoke
         run: bash tests/control-api-errors-smoke.sh
+      - name: Agent Environment smoke
+        run: bash tests/agent-environment-smoke.sh
       - name: Revision store smoke
         run: bash tests/revision-store-smoke.sh
       - name: Reconciler smoke
