@@ -56,6 +56,15 @@ valid_ipv4() {
   done
 }
 
+valid_ipv4_cidr() {
+  local cidr="$1" network prefix
+  [[ "$cidr" =~ ^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/([0-9]+)$ ]] || return 1
+  network="${BASH_REMATCH[1]}"
+  prefix="${BASH_REMATCH[2]}"
+  valid_ipv4 "$network" || return 1
+  (( prefix <= 32 ))
+}
+
 ipv4_to_int() {
   local IFS=.
   local a b c d
@@ -66,11 +75,9 @@ ipv4_to_int() {
 cidr_contains() {
   local ip="$1" cidr="$2" network prefix mask base value
   valid_ipv4 "$ip" || return 1
-  [[ "$cidr" =~ ^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/([0-9]+)$ ]] || return 1
-  network="${BASH_REMATCH[1]}"
-  prefix="${BASH_REMATCH[2]}"
-  valid_ipv4 "$network" || return 1
-  (( prefix >= 0 && prefix <= 32 )) || return 1
+  valid_ipv4_cidr "$cidr" || return 1
+  network="${cidr%%/*}"
+  prefix="${cidr##*/}"
   base="$(ipv4_to_int "$network")"
   value="$(ipv4_to_int "$ip")"
   if (( prefix == 0 )); then mask=0; else mask=$(( (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF )); fi
