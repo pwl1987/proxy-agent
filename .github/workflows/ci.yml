@@ -56,33 +56,7 @@ jobs:
           grep -q '^USER \$SERVICE_USER$' Containerfile
           grep -q '^HEALTHCHECK ' Containerfile
       - name: systemd unit contract smoke
-        run: |
-          for unit in systemd/*.service systemd/*.timer systemd-user/*.service systemd-user/*.timer; do
-            grep -Eq '^\[(Unit|Service|Timer|Install)\]$' "$unit"
-          done
-          grep -q '^Type=simple$' systemd/proxy-agent.service
-          grep -q '^ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl run$' systemd/proxy-agent.service
-          grep -q '^User=@SERVICE_USER@$' systemd/proxy-agent.service
-          grep -q '^Group=@SERVICE_GROUP@$' systemd/proxy-agent.service
-          grep -q '^NoNewPrivileges=true$' systemd/proxy-agent.service
-          grep -q '^ProtectSystem=strict$' systemd/proxy-agent.service
-          grep -q '^ProtectHome=read-only$' systemd/proxy-agent.service
-          grep -q '^Type=simple$' systemd/proxy-agent@.service
-          grep -q '^ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl --profile %i run$' systemd/proxy-agent@.service
-          grep -q '^User=@SERVICE_USER@$' systemd/proxy-agent@.service
-          grep -q '^User=@SERVICE_USER@$' systemd/proxy-agent-health.service
-          grep -q '^User=@SERVICE_USER@$' systemd/proxy-agent-health@.service
-          grep -q '^Requires=proxy-agent@%i.service$' systemd/proxy-agent-health@.service
-          grep -q '^ExecStart=.*proxy-agent-health --profile %i$' systemd/proxy-agent-health@.service
-          grep -q '^Type=simple$' systemd-user/proxy-agent.service
-          grep -q '^ExecStart=@BIN@/proxy-ctl run$' systemd-user/proxy-agent.service
-          grep -q '^Environment=PA_STATE_DIR=%t/proxy-agent/run$' systemd-user/proxy-agent.service
-          grep -q '^Environment=PA_LOG_DIR=%t/proxy-agent/log$' systemd-user/proxy-agent.service
-          grep -q '^ProtectHome=read-only$' systemd-user/proxy-agent.service
-          grep -q '^ExecStart=@BIN@/proxy-ctl --profile %i run$' systemd-user/proxy-agent@.service
-          grep -q '^Environment=PA_STATE_DIR=%t/proxy-agent/run/%i$' systemd-user/proxy-agent@.service
-          grep -q '^ExecStart=@BIN@/proxy-agent-health --profile %i$' systemd-user/proxy-agent@.service
-          grep -q '^Unit=proxy-agent-health@%i.service$' systemd-user/proxy-agent-health@.timer
+        run: bash tests/systemd-contract-smoke.sh
       - name: Functional smoke suite
         run: bash tests/smoke.sh
       - name: TUI guard smoke
