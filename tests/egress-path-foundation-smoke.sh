@@ -19,6 +19,7 @@ base_json='{
 python3 - "$EXPORTER" "$base_json" <<'PY'
 import json, subprocess, sys
 out = subprocess.check_output([sys.executable, sys.argv[1]], input=sys.argv[2], text=True)
+print("DIRECT PROJECTION:\n" + out, file=sys.stderr)
 lines = dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
 assert lines["BACKEND"] == "ssh-socks"
 assert lines["REMOTE_HOST"] == "proxy.example.com"
@@ -55,6 +56,7 @@ python3 - "$EXPORTER" "$base_json" <<'PY'
 import json, subprocess, sys
 doc=json.loads(sys.argv[2]); doc["egress_path"]={"transport":"ssh","mode":"jump","dns_mode":"local","target":{"host":"target.example","user":"target","port":22,"identity_ref":"file:/run/proxy-agent/keys/target","known_hosts_ref":"file:/run/proxy-agent/keys/target-known_hosts"},"jump":{"host":"jump.example","user":"jump","port":2222,"identity_ref":"file:/run/proxy-agent/keys/jump","known_hosts_ref":"file:/run/proxy-agent/keys/jump-known_hosts"}}
 out=subprocess.check_output([sys.executable,sys.argv[1]],input=json.dumps(doc),text=True)
+print("JUMP PROJECTION:\n" + out, file=sys.stderr)
 lines=dict(line.split("=",1) for line in out.splitlines() if "=" in line)
 assert lines["SSH_EGRESS_MODE"] == "jump"
 assert lines["SSH_DNS_MODE"] == "local"
