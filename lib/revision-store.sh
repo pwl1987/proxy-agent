@@ -25,11 +25,26 @@ revision_lock_is_stale() {
   [[ "$current" != "$start" ]]
 }
 revision_lock_reclaim() {
-  local lock="$(revision_lock_dir)" stale="${lock}.stale.$$.$RANDOM"
-  if mv "$lock" "$stale" 2>/dev/null; then
-    rm -rf "$stale"
-    return 0
+  local lock="$(revision_lock_dir)" guard="$(revision_lock_dir).reclaim" stale="${lock}.stale.$$.$RANDOM" created now
+  if ! mkdir "$guard" 2>/dev/null; then
+    created="$(cat "$guard/created" 2>/dev/null || true)"
+    now="$(date +%s)"
+    if [[ "$created" =~ ^[0-9]+$ ]] && (( now - created > 30 )); then
+      rm -rf "$guard" 2>/dev/null || true
+    else
+      return 1
+    fi
+    mkdir "$guard" 2>/dev/null || return 1
   fi
+  printf '%s\n' "$$" >"$guard/pid"
+  printf '%s\n' "$(date +%s)" >"$guard/created"
+  if revision_lock_is_stale; then
+    if mv "$lock" "$stale" 2>/dev/null; then
+      rm -rf "$stale"
+      return 0
+    fi
+  fi
+  rm -rf "$guard" 2>/dev/null || true
   return 1
 }
 revision_lock_acquire() {
