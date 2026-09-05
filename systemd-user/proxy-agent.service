@@ -8,8 +8,7 @@ Type=simple
 Environment=PA_STATE_DIR=%t/proxy-agent/run
 Environment=PA_LOG_DIR=%t/proxy-agent/log
 ExecStart=@BIN@/proxy-ctl run
-ExecStop=@BIN@/proxy-ctl stop
-ExecReload=@BIN@/proxy-ctl restart
+ExecReload=/usr/bin/systemctl --user restart %n
 Restart=on-failure
 RestartSec=3
 KillMode=control-group
