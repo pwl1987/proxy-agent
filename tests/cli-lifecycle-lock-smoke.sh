@@ -44,28 +44,49 @@ export PA_CONFIG="$CONFIG"
 export PA_STATE_DIR="$STATE"
 export PA_PROFILE_DIR="$PROFILES"
 
-run_pair() {
-  local label="$1" first_cmd="$2" second_cmd="$3" a_rc b_rc
-  set +e
-  ( "$TMP/bin/proxy-ctl" $first_cmd ) >"$TMP/${label}-a.log" 2>&1 & pid_a=$!
-  sleep 0.03
-  ( "$TMP/bin/proxy-ctl" $second_cmd ) >"$TMP/${label}-b.log" 2>&1 & pid_b=$!
-  wait "$pid_a"; a_rc=$?
-  wait "$pid_b"; b_rc=$?
-  set -e
-  if (( a_rc != 0 || b_rc != 0 )); then
-    echo "${label}: first_rc=${a_rc} second_rc=${b_rc}" >&2
-    cat "$TMP/${label}-a.log" >&2 || true
-    cat "$TMP/${label}-b.log" >&2 || true
+probe_blocking() {
+  local label="$1" command_line="$2" pid
+  ( "$TMP/bin/proxy-ctl" $command_line ) >"$TMP/${label}.log" 2>&1 & pid=$!
+  sleep 0.15
+  if ! kill -0 "$pid" 2>/dev/null; then
+    echo "$label lifecycle command did not block behind run" >&2
+    cat "$TMP/${label}.log" >&2 || true
     return 1
   fi
+  echo "$pid"
 }
 
-run_pair plain start start
-[[ -f "$STATE/.lifecycle.lock" ]] || { echo 'plain lifecycle lock file missing' >&2; exit 1; }
+"$TMP/bin/proxy-ctl" run >"$TMP/run.log" 2>&1 & run_pid=$!
+sleep 0.15
+[[ -f "$STATE/.lifecycle.lock" ]] || { echo 'run did not create lifecycle lock' >&2; exit 1; }
 
-run_pair profile '--profile demo start' '--profile demo start'
-[[ -f "$STATE/.lifecycle.lock" ]] || { echo 'profile lifecycle lock file missing' >&2; exit 1; }
+start_pid="$(probe_blocking start start)"
+kill -TERM "$run_pid" 2>/dev/null || true
+sleep 0.15
+kill -KILL "$run_pid" 2>/dev/null || true
+wait "$run_pid" 2>/dev/null || true
+wait "$start_pid" || {
+  echo 'blocked start did not complete after run released lifecycle lock' >&2
+  cat "$TMP/start.log" >&2 || true
+  exit 1
+}
+
+[[ -f "$STATE/.lifecycle.lock" ]] || { echo 'lifecycle lock file missing after start' >&2; exit 1; }
+"$TMP/bin/proxy-ctl" restart >/dev/null
+"$TMP/bin/proxy-ctl" stop >/dev/null
+
+"$TMP/bin/proxy-ctl" --profile demo run >"$TMP/profile-run.log" 2>&1 & profile_run_pid=$!
+sleep 0.15
+[[ -f "$STATE/.lifecycle.lock" ]] || { echo 'profile run did not use explicit runtime lifecycle lock' >&2; exit 1; }
+
+stop_pid="$(probe_blocking profile-stop '--profile demo stop')"
+kill -KILL "$profile_run_pid" 2>/dev/null || true
+wait "$profile_run_pid" 2>/dev/null || true
+wait "$stop_pid" || {
+  echo 'blocked profile stop did not complete after run release' >&2
+  cat "$TMP/profile-stop.log" >&2 || true
+  exit 1
+}
 
 rm -f "$STATE/.lifecycle.lock"
 "$TMP/bin/proxy-ctl" status >/dev/null
