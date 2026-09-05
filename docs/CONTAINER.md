@@ -5,7 +5,7 @@
 ## Build
 
 ```bash
-docker build -f Containerfile -t proxy-agent:0.2.0 .
+docker build -f Containerfile -t proxy-agent:0.4.0 .
 ```
 
 The image runs as the dedicated non-root `proxy-agent` user. `proxy-ctl run` is the container entrypoint.
@@ -18,7 +18,7 @@ Mount the production configuration over `/etc/proxy-agent/proxy-agent.conf`:
 docker run --rm \
   -p 127.0.0.1:1080:1080 \
   -v "$PWD/proxy-agent.conf:/etc/proxy-agent/proxy-agent.conf:ro" \
-  proxy-agent:0.2.0
+  proxy-agent:0.4.0
 ```
 
 Keep the mounted configuration owner-readable and not world-readable. For SSH-based backends, mount the private key read-only into the service user's home and reference that path from the configuration.
