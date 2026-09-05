@@ -90,7 +90,7 @@ wait_group_exit() {
 
 setsid "$TMP/bin/proxy-ctl" run >"$TMP/run.log" 2>&1 & run_pid=$!
 sleep 0.15
-[[ -f "$STATE/.lifecycle.lock" ]] || { echo 'run did not create lifecycle lock' >&2; exit 1; }
+[[ -f "$STATE/.lifecycle.lock" ]] || { echo 'run did not create lifecycle lock' >&2; cat "$TMP/run.log" >&2 || true; env | grep -E '^(PA_|XDG_RUNTIME_DIR=)' >&2 || true; exit 1; }
 assert_blocked plain-start start
 
 kill -KILL -- "-$run_pid" 2>/dev/null || true
@@ -103,7 +103,7 @@ bounded recovered-stop "$TMP/bin/proxy-ctl" stop
 
 setsid "$TMP/bin/proxy-ctl" --profile demo run >"$TMP/profile-run.log" 2>&1 & run_pid=$!
 sleep 0.15
-[[ -f "$STATE/demo/.lifecycle.lock" ]] || { echo 'profile run did not use profile runtime lifecycle lock' >&2; exit 1; }
+[[ -f "$STATE/demo/.lifecycle.lock" ]] || { echo 'profile run did not use profile runtime lifecycle lock' >&2; cat "$TMP/profile-run.log" >&2 || true; exit 1; }
 assert_blocked profile-stop --profile demo stop
 kill -KILL -- "-$run_pid" 2>/dev/null || true
 wait_group_exit "$run_pid"
