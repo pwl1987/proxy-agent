@@ -13,11 +13,12 @@ ssh_reference_resolve() {
 }
 
 ssh_identity_resolve() {
-  local ref="$1" path mode
+  local ref="$1" path mode octal_mode
   path="$(ssh_reference_resolve "$ref")"
   mode="$(stat -c '%a' "$path" 2>/dev/null || true)"
   [[ "$mode" =~ ^[0-7]{3,4}$ ]] || die "无法检查 SSH identity 权限: $path"
-  (( 10#$mode % 100 <= 60 )) || die "SSH identity 权限过宽: $path"
+  octal_mode=$((8#$mode))
+  (( (octal_mode & 0077) == 0 )) || die "SSH identity 权限过宽: $path"
   printf '%s' "$path"
 }
 
