@@ -17,8 +17,7 @@ Environment=PA_CONFIG=/run/proxy-agent/%i/runtime/proxy-agent.conf
 Environment=PA_BOOTSTRAP_CONFIG=/etc/proxy-agent/profiles/%i.conf
 ExecStartPre=/bin/bash @PREFIX@/bin/proxy-agent-reconcile --bootstrap
 ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl --profile %i run
-ExecStop=/bin/bash @PREFIX@/bin/proxy-ctl --profile %i stop
-ExecReload=/bin/bash @PREFIX@/bin/proxy-ctl --profile %i restart
+ExecReload=/bin/systemctl restart %n
 Restart=on-failure
 RestartSec=3
 KillMode=control-group
