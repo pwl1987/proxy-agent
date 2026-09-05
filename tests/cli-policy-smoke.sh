@@ -8,7 +8,7 @@ set +e
 output="$("$CLI" --profile 2>&1)"
 rc=$?
 set -e
-[[ $rc -eq 2 ]]
+[[ $rc -eq 1 ]]
 grep -q '用法：proxy-ctl --profile <名称> <命令> \[参数\]' <<<"$output"
 
 authoritative_commands='validate start run stop restart status test diagnose doctor route env exec integration profiles capabilities config health-history agent tui'
