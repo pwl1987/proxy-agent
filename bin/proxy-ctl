@@ -37,6 +37,13 @@ fi
 
 backend_load
 
+case "${1:-}" in
+  start|stop|restart|run)
+    state_lifecycle_lock_acquire
+    trap 'state_lifecycle_lock_release' EXIT HUP INT TERM
+    ;;
+esac
+
 adapter_start() {
   [[ "${HTTP_ENABLED:-false}" == "true" ]] || return 0
   backend_require_capability socks5
@@ -283,7 +290,7 @@ cmd_config() {
 }
 cmd_doctor() {
   local rc=0
-  [[ "${SOCKS_BIND:-127.0.0.1}" != '0.0.0.0' ]] || { warn 'SOCKS 暴露在所有网络接口'; rc=1; }
+  [[ "${SOCKS_BIND:-127.0.0.1}" != "0.0.0.0" ]] || { warn 'SOCKS 暴露在所有网络接口'; rc=1; }
   if [[ "${BACKEND:-}" == ssh-socks ]]; then
     [[ "${SSH_STRICT_HOST_KEY_CHECKING:-yes}" == 'yes' ]] || { warn 'SSH host key 校验已关闭'; rc=1; }
     [[ -n "${REMOTE_HOST:-}" ]] || { warn 'REMOTE_HOST 为空'; rc=1; }
