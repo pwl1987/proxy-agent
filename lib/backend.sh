@@ -38,3 +38,13 @@ backend_endpoint() { "$(backend_function_prefix "$BACKEND")_endpoint"; }
 backend_managed() { "$(backend_function_prefix "$BACKEND")_managed"; }
 backend_pid() { "$(backend_function_prefix "$BACKEND")_pid"; }
 backend_process_identity() { "$(backend_function_prefix "$BACKEND")_process_identity"; }
+
+backend_health_detail() {
+  local prefix
+  prefix="$(backend_function_prefix "$BACKEND")"
+  if declare -F "${prefix}_health_detail" >/dev/null; then
+    "${prefix}_health_detail"
+    return
+  fi
+  printf '{"transport_status":"unknown","jump_status":"not_applicable","target_status":"unknown","proxy_status":"unknown","overall_status":"unknown","reason":"backend_health_detail_unavailable","last_checked":%s}\n' "$(date +%s)"
+}
