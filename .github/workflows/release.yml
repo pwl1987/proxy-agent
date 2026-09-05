@@ -13,32 +13,65 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout release tag
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      - name: Log release context
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== RELEASE CONTEXT ==='
+          echo "event=${GITHUB_EVENT_NAME}"
+          echo "ref=${GITHUB_REF}"
+          echo "ref_name=${GITHUB_REF_NAME}"
+          echo "sha=${GITHUB_SHA}"
+          echo "run_id=${GITHUB_RUN_ID}"
+          echo "repository=${GITHUB_REPOSITORY}"
+          echo '=== TAG TARGET ==='
+          git fetch --tags --force origin
+          tag_target="$(git rev-list -n1 "refs/tags/${GITHUB_REF_NAME}^{commit}")"
+          echo "tag_target=${tag_target}"
+          echo "head_commit=$(git rev-parse HEAD)"
+          echo "tree=$(git rev-parse HEAD^{tree})"
+          git show -s --format='commit=%H%nparents=%P%nauthor=%an <%ae>%ncommitter=%cn <%ce>%ndate=%cI%nsubject=%s' HEAD
+          test "$(git rev-parse HEAD)" = "$tag_target"
+          test -z "$(git status --porcelain)"
 
       - name: Validate tag matches VERSION
         shell: bash
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME#v}"
+          release_version="${GITHUB_REF_NAME#v}"
           version="$(tr -d '[:space:]' < VERSION)"
-          [[ "$tag" == "$version" ]] || {
-            echo "tag $tag does not match VERSION $version" >&2
+          echo "release_version=$release_version"
+          echo "tag_version=${GITHUB_REF_NAME#v}"
+          echo "version_file=$version"
+          [[ "$release_version" == "$version" ]] || {
+            echo "ERROR: tag $release_version does not match VERSION $version" >&2
             exit 1
           }
           find bin lib backends adapters integrations tests -type f -name '*.sh' -print0 \
             | xargs -0 -r -n1 bash -n
           bash -n install.sh install-user.sh upgrade.sh upgrade-user.sh
+          echo 'shell_syntax=passed'
 
       - name: Build container image
         env:
           IMAGE_NAME: ghcr.io/${{ github.repository }}
-          VERSION: ${{ github.ref_name }}
+          IMAGE_TAG: ${{ github.ref_name }}
+        shell: bash
         run: |
           set -euo pipefail
-          docker build --pull -f Containerfile -t "$IMAGE_NAME:$VERSION" -t "$IMAGE_NAME:latest" .
-          docker image inspect "$IMAGE_NAME:$VERSION" >/dev/null
+          echo '=== CONTAINER BUILD ==='
+          echo "image=$IMAGE_NAME"
+          echo "tag=$IMAGE_TAG"
+          docker build --pull -f Containerfile -t "$IMAGE_NAME:$IMAGE_TAG" -t "$IMAGE_NAME:latest" .
+          docker image inspect "$IMAGE_NAME:$IMAGE_TAG" >/dev/null
+          docker image inspect --format='image_id={{.Id}}\ncreated={{.Created}}\nrepo_tags={{join .RepoTags ","}}' "$IMAGE_NAME:$IMAGE_TAG"
+          echo 'container_build=passed'
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -47,25 +80,51 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Push container image
+      - name: Push container image and record provenance
         env:
           IMAGE_NAME: ghcr.io/${{ github.repository }}
-          VERSION: ${{ github.ref_name }}
+          IMAGE_TAG: ${{ github.ref_name }}
+        shell: bash
         run: |
           set -euo pipefail
-          docker push "$IMAGE_NAME:$VERSION"
+          echo '=== CONTAINER PUBLISH ==='
+          docker push "$IMAGE_NAME:$IMAGE_TAG"
+          version_digest="$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_NAME:$IMAGE_TAG")"
+          echo "version_digest=$version_digest"
           docker push "$IMAGE_NAME:latest"
-          digest="$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_NAME:$VERSION")"
-          printf '%s\n' "$digest" | tee container-digest.txt
+          latest_digest="$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_NAME:latest")"
+          echo "latest_digest=$latest_digest"
+          printf '%s\n' "$version_digest" > container-digest.txt
+          {
+            echo "release_version=${IMAGE_TAG#v}"
+            echo "repository=$GITHUB_REPOSITORY"
+            echo "tag=$GITHUB_REF_NAME"
+            echo "source_commit=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "source_tag_commit=$(git rev-list -n1 refs/tags/$GITHUB_REF_NAME^{commit})"
+            echo "image=$IMAGE_NAME:$IMAGE_TAG"
+            echo "image_digest=$version_digest"
+            echo "latest_image=$IMAGE_NAME:latest"
+            echo "latest_digest=$latest_digest"
+            echo "workflow_run_id=$GITHUB_RUN_ID"
+            echo "workflow_run_url=https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "published_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } | tee release-provenance.txt
+          echo 'container_publish=passed'
 
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ github.ref_name }}
+        shell: bash
         run: |
           set -euo pipefail
+          echo '=== GITHUB RELEASE ==='
           gh release create "$VERSION" \
             --verify-tag \
             --generate-notes \
             --title "proxy-agent $VERSION" \
-            container-digest.txt
+            container-digest.txt \
+            release-provenance.txt
+          gh release view "$VERSION" --json name,tagName,isDraft,isPrerelease,publishedAt,url,assets
+          echo 'github_release=created'
