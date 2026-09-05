@@ -46,6 +46,8 @@ for _ in {1..30}; do
 done
 test -S "$SOCKET"
 
+events="$STATE/audit/events.jsonl"
+
 PA_STATE_DIR="$STATE" python3 "$WEB" \
   --listen 127.0.0.1 \
   --port "$PORT" \
@@ -67,7 +69,6 @@ status="$(curl -sS -o "$TMP/failure.body" -w '%{http_code}' \
   "http://127.0.0.1:$PORT/session/login")"
 test "$status" = 401
 
-events="$STATE/audit/events.jsonl"
 for _ in {1..20}; do [[ -s "$events" ]] && break; sleep 0.1; done
 test -s "$events"
 grep -q '"event":"login.failure"' "$events"
@@ -81,6 +82,8 @@ status="$(curl -sS -c "$TMP/cookies.txt" -o "$TMP/success.body" -w '%{http_code}
   "http://127.0.0.1:$PORT/session/login")"
 test "$status" = 200
 
+csrf="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["csrf_token"])' "$TMP/success.body")"
+test -n "$csrf"
 grep -q '"event":"login.success"' "$events"
 grep -q '"status":"succeeded"' "$events"
 
@@ -95,5 +98,26 @@ PY
 
 status="$(curl -sS -o "$TMP/profiles-unauth.body" -w '%{http_code}' "http://127.0.0.1:$PORT/api/v1/profiles")"
 test "$status" = 401
+
+rm -rf "$STATE/audit"
+printf '%s\n' 'audit-store-disabled-for-smoke' >"$STATE/audit"
+
+status="$(curl --silent --show-error --unix-socket "$SOCKET" \
+  -o "$TMP/remote-mutation-audit-failed.json" \
+  -w '%{http_code}' \
+  -H 'Content-Type: application/json' \
+  -X POST \
+  --data '{"actor":"web-ui"}' \
+  "http://localhost/api/v1/runtime/start")"
+test "$status" = 503
+python3 - "$TMP/remote-mutation-audit-failed.json" <<'PY'
+import json, sys
+obj = json.load(open(sys.argv[1]))
+assert obj["error"]["code"] == "audit_unavailable", obj
+assert "remote mutation audit could not be committed" in obj["error"]["message"], obj
+PY
+
+test -f "$STATE/audit"
+! grep -q 'runtime.start' "$TMP/api.log"
 
 echo 'web auth audit smoke: PASS'
