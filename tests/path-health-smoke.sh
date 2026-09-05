@@ -125,7 +125,7 @@ backend_pid() { printf '1234'; }
 backend_process_identity() { printf 'test-process'; }
 backend_endpoint() { printf 'socks5h://127.0.0.1:1080'; }
 adapter_privoxy_status() { return 1; }
-backend_health_detail() { printf '%s\n' '{"transport_status":"ready","jump_status":"ready","target_status":"ready","proxy_status":"ready","overall_status":"ready","reason":"ssh_jump_path_established","last_checked":1234567890}'; }
+export PA_HEALTH_PATH_DETAIL='{"transport_status":"ready","jump_status":"ready","target_status":"ready","proxy_status":"ready","overall_status":"ready","reason":"ssh_jump_path_established","last_checked":1234567890}'
 state_sync
 python3 - "$PA_STATE_DIR/runtime.json" <<'PY'
 import json, sys
