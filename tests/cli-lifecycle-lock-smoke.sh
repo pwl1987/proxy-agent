@@ -32,37 +32,34 @@ chmod +x "$TMP/proxy-ctl"
 
 export PA_STATE_DIR="$STATE"
 
-# Two lifecycle commands through a proxy-ctl-shaped caller must serialize on the
-# same per-runtime lock. The marker duration makes overlap observable.
-set +e
-( "$TMP/proxy-ctl" start ) & pid_a=$!
-sleep 0.03
-( "$TMP/proxy-ctl" restart ) & pid_b=$!
-wait "$pid_a"; rc_a=$?
-wait "$pid_b"; rc_b=$?
-set -e
-(( rc_a == 0 ))
-(( rc_b == 0 ))
-[[ "$(wc -l <"$STATE/events")" -eq 2 ]]
-[[ -f "$STATE/.lifecycle.lock" ]]
+run_pair() {
+  local label="$1" a_rc b_rc
+  set +e
+  ( "$TMP/proxy-ctl" "$2" "$3" ) >"$TMP/${label}-a.log" 2>&1 & pid_a=$!
+  sleep 0.03
+  ( "$TMP/proxy-ctl" "$4" "$5" ) >"$TMP/${label}-b.log" 2>&1 & pid_b=$!
+  wait "$pid_a"; a_rc=$?
+  wait "$pid_b"; b_rc=$?
+  set -e
+  if (( a_rc != 0 || b_rc != 0 )); then
+    echo "${label}: first_rc=${a_rc} second_rc=${b_rc}" >&2
+    cat "$TMP/${label}-a.log" >&2 || true
+    cat "$TMP/${label}-b.log" >&2 || true
+    return 1
+  fi
+}
 
-# The --profile dispatch also maps to the same lifecycle lock.
+run_pair plain start '' restart ''
+[[ "$(wc -l <"$STATE/events")" -eq 2 ]] || { echo 'plain lifecycle did not record two operations' >&2; exit 1; }
+[[ -f "$STATE/.lifecycle.lock" ]] || { echo 'plain lifecycle lock file missing' >&2; exit 1; }
+
 rm -f "$STATE/.lifecycle.lock"
-set +e
-( "$TMP/proxy-ctl" --profile demo start ) & pid_a=$!
-sleep 0.03
-( "$TMP/proxy-ctl" --profile demo restart ) & pid_b=$!
-wait "$pid_a"; rc_a=$?
-wait "$pid_b"; rc_b=$?
-set -e
-(( rc_a == 0 ))
-(( rc_b == 0 ))
-[[ "$(wc -l <"$STATE/events")" -eq 4 ]]
-[[ -f "$STATE/.lifecycle.lock" ]]
+run_pair profile --profile demo --profile demo
+[[ "$(wc -l <"$STATE/events")" -eq 4 ]] || { echo 'profile lifecycle did not record two operations' >&2; exit 1; }
+[[ -f "$STATE/.lifecycle.lock" ]] || { echo 'profile lifecycle lock file missing' >&2; exit 1; }
 
-# A non-lifecycle command must not contend on the lifecycle lock.
 rm -f "$STATE/.lifecycle.lock"
 "$TMP/proxy-ctl" status
-[[ ! -e "$STATE/.lifecycle.lock" ]]
+[[ ! -e "$STATE/.lifecycle.lock" ]] || { echo 'read-only status unexpectedly created lifecycle lock' >&2; exit 1; }
 
 echo 'cli lifecycle lock smoke: PASS'
