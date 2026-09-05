@@ -1,0 +1,22 @@
+name: Lifecycle Gate
+
+on:
+  push:
+    branches: ["0.4.x", "fix/**"]
+  pull_request:
+    branches: ["0.4.x"]
+  workflow_dispatch:
+
+jobs:
+  lifecycle-lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Normalize executable permissions
+        run: chmod 0755 lib/*.sh tests/*.sh bin/*
+      - name: Shell syntax check
+        run: |
+          bash -n lib/state.sh
+          bash -n tests/lifecycle-lock-smoke.sh
+      - name: Lifecycle lock concurrency smoke
+        run: bash tests/lifecycle-lock-smoke.sh
