@@ -83,19 +83,41 @@ state_lock_release() {
 
 state_lifecycle_lock_acquire() {
   mkdir -p "$(state_dir)"
+
+  # A trusted orchestrator may pass its already-held lock file descriptor to a
+  # child CLI. Reuse only when the descriptor resolves to this exact lock path;
+  # otherwise fall back to taking a new lock. The inherited descriptor is not
+  # unlocked by the child, because flock locks are attached to the open file
+  # description and the parent still owns the orchestration transaction.
+  local inherited_fd="${PA_LIFECYCLE_FD:-}" lock_file fd_target
+  if [[ "${PA_LIFECYCLE_FD_INHERITED:-false}" == true && "$inherited_fd" =~ ^[0-9]+$ && -e "/proc/$$/fd/$inherited_fd" ]]; then
+    lock_file="$(readlink -f "$(state_lifecycle_lock_file)")"
+    fd_target="$(readlink -f "/proc/$$/fd/$inherited_fd" 2>/dev/null || true)"
+    if [[ -n "$lock_file" && "$fd_target" == "$lock_file" ]] && flock -n "$inherited_fd" 2>/dev/null; then
+      PA_LIFECYCLE_LOCK_INHERITED=true
+      return 0
+    fi
+    unset PA_LIFECYCLE_FD PA_LIFECYCLE_FD_INHERITED
+  fi
+
   exec {PA_LIFECYCLE_FD}>"$(state_lifecycle_lock_file)"
   chmod 0600 "$(state_lifecycle_lock_file)"
   if ! command -v flock >/dev/null 2>&1; then
     die '缺少 flock，无法保证生命周期并发锁'
   fi
   flock -x "$PA_LIFECYCLE_FD"
+  PA_LIFECYCLE_LOCK_INHERITED=false
 }
 
 state_lifecycle_lock_release() {
   if [[ -n "${PA_LIFECYCLE_FD:-}" ]]; then
+    if [[ "${PA_LIFECYCLE_LOCK_INHERITED:-false}" == true ]]; then
+      unset PA_LIFECYCLE_FD PA_LIFECYCLE_FD_INHERITED PA_LIFECYCLE_LOCK_INHERITED
+      return 0
+    fi
     flock -u "$PA_LIFECYCLE_FD" || true
     eval "exec ${PA_LIFECYCLE_FD}>&-"
-    unset PA_LIFECYCLE_FD
+    unset PA_LIFECYCLE_FD PA_LIFECYCLE_LOCK_INHERITED
   fi
 }
 
