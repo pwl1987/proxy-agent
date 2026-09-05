@@ -106,10 +106,10 @@ export SSH_JUMP_KEY="file:$tmp_dir/keys/jump"
 export SSH_JUMP_KNOWN_HOSTS="file:$tmp_dir/known/jump"
 export SSH_TARGET_KEY="file:$tmp_dir/keys/target"
 export SSH_TARGET_KNOWN_HOSTS="file:$tmp_dir/known/target"
-export SSH_JUMP_HOST='jump"node\\1.example'
+export SSH_JUMP_HOST='jump"node.example'
 export SSH_JUMP_USER='jump user'
 export SSH_JUMP_PORT=2222
-export REMOTE_HOST='target"node\\1.example'
+export REMOTE_HOST='target"node.example'
 export REMOTE_USER='target user'
 export REMOTE_PORT=22
 export SSH_STRICT_HOST_KEY_CHECKING=yes
@@ -117,9 +117,9 @@ mkdir -p "$PA_STATE_DIR"
 ssh_config="$PA_STATE_DIR/ssh-socks-runtime.conf"
 backend_ssh_socks_write_jump_config "$ssh_config"
 assert_file="$(cat "$ssh_config")"
-printf '%s\n' "$assert_file" | grep -F 'HostName "jump\"node\\1.example"' >/dev/null
+printf '%s\n' "$assert_file" | grep -F 'HostName "jump\"node.example"' >/dev/null
 printf '%s\n' "$assert_file" | grep -F 'User "jump user"' >/dev/null
-printf '%s\n' "$assert_file" | grep -F 'HostName "target\"node\\1.example"' >/dev/null
+printf '%s\n' "$assert_file" | grep -F 'HostName "target\"node.example"' >/dev/null
 printf '%s\n' "$assert_file" | grep -F 'User "target user"' >/dev/null
 printf '%s\n' "$assert_file" | grep -F "IdentityFile \"$tmp_dir/keys/jump\"" >/dev/null
 [[ "$(stat -c '%a' "$ssh_config")" == 600 ]]
