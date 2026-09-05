@@ -84,24 +84,39 @@ health runner
 
 Path Health smoke、Functional、ShellCheck、Upgrade Transaction Gate 以及既有 0.4.x 回归均通过后，形成 0.5.1 release candidate 基线。
 
-## 0.5.2 — Web Gateway Foundation（已进入 main，但在 0.5.1 发布收口完成前冻结）
+## 0.5.2 — Web/LAN Management Plane
 
-> 0.5.2 代码已经进入 `main`，但它不是 `v0.5.1` 的组成部分。正式开发推进必须在 0.5.1 provenance 与发布治理收口后继续。
+### 已进入代码
 
-### 已进入代码的能力
+- `bin/proxy-agent-web` authenticated Web Gateway。
+- 默认 loopback listener；非 loopback 强制 TLS。
+- Gateway 通过 Unix socket 调用现有 Control API v1，不直接拥有 revision/audit/runtime/reconcile 状态。
+- 已有 read-only GET facade、`no-store` 响应与 mutation route allowlist。
 
-- `bin/proxy-agent-web`。
-- loopback 默认监听。
-- Bearer token。
-- 非 loopback 场景要求 TLS。
-- 通过 Unix socket 只读代理 Control API v1。
-- mutating methods 明确拒绝。
-- `no-store` 响应策略。
-- Web gateway smoke 与相关功能门禁。
+### 本阶段已落地：Session / CSRF / Login Rate Limit
 
-### 下一阶段需要继续记录
+- admin token file 作为 bootstrap credential。
+- 登录成功生成随机 session id + CSRF token。
+- session 默认 30 分钟、最多 256 个，并仅驻留进程内存；Gateway 重启后失效，不引入持久 Web 状态。
+- cookie 使用 `HttpOnly`、`SameSite=Strict`；TLS listener 增加 `Secure`。
+- 所有 Web POST 控制操作要求 session + `X-CSRF-Token`，并校验 Origin/Referer。
+- 登录失败按 peer IP 进行 60 秒窗口 5 次失败限流，超限返回 429。
+- Web POST 已接到既有 Control API v1 的 validate/revisions/apply/rollback/runtime 路由，不复制其 validation、revision、audit、activation、reconcile 逻辑。
+- `tests/web-gateway-smoke.sh` 覆盖 session、CSRF、rate limit、control proxy、TLS listener boundary、logout 与安全方法边界。
 
-0.5.2 后续迭代必须按“能力 -> 调用链 -> 状态影响 -> 安全边界 -> 兼容性 -> 测试 -> 发布物”逐项登记，不再只以 PR 标题作为功能日志。
+### 关键调用链
+
+```text
+Browser
+  -> Web Gateway session/auth/CSRF/rate-limit
+  -> Unix socket
+  -> Control API v1
+  -> validation / revision / audit / reconcile / runtime
+```
+
+### 当前非目标
+
+RBAC、多租户、持久 session store、独立 ACL engine 以及 profile/backend/egress UI 尚未作为完成项记录；下一 slice 应继续建立在现有 Control API 权威边界之上。
 
 ## 发布治理变更
 
