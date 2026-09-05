@@ -50,7 +50,8 @@ cp "$CONFIG" "$PROFILES/demo.conf"
 chmod 0600 "$PROFILES/demo.conf"
 
 export PA_CONFIG="$CONFIG"
-unset PA_STATE_DIR PA_STATE_DIR_EXPLICIT
+export PA_STATE_DIR="$STATE"
+export PA_STATE_DIR_EXPLICIT=true
 export XDG_RUNTIME_DIR
 export PA_PROFILE_DIR="$PROFILES"
 
@@ -90,7 +91,7 @@ wait_group_exit() {
 
 setsid "$TMP/bin/proxy-ctl" run >"$TMP/run.log" 2>&1 & run_pid=$!
 sleep 0.15
-[[ -f "$STATE/.lifecycle.lock" ]] || { echo 'run did not create lifecycle lock' >&2; cat "$TMP/run.log" >&2 || true; env | grep -E '^(PA_|XDG_RUNTIME_DIR=)' >&2 || true; exit 1; }
+[[ -f "$STATE/.lifecycle.lock" ]] || { echo 'run did not create lifecycle lock' >&2; cat "$TMP/run.log" >&2 || true; exit 1; }
 assert_blocked plain-start start
 
 kill -KILL -- "-$run_pid" 2>/dev/null || true
@@ -101,6 +102,8 @@ bounded recovered-start "$TMP/bin/proxy-ctl" start
 bounded recovered-restart "$TMP/bin/proxy-ctl" restart
 bounded recovered-stop "$TMP/bin/proxy-ctl" stop
 
+export PA_STATE_DIR="$STATE/demo"
+export PA_STATE_DIR_EXPLICIT=true
 setsid "$TMP/bin/proxy-ctl" --profile demo run >"$TMP/profile-run.log" 2>&1 & run_pid=$!
 sleep 0.15
 [[ -f "$STATE/demo/.lifecycle.lock" ]] || { echo 'profile run did not use profile runtime lifecycle lock' >&2; cat "$TMP/profile-run.log" >&2 || true; exit 1; }
@@ -110,9 +113,15 @@ wait_group_exit "$run_pid"
 run_pid=''
 bounded profile-recovered-stop "$TMP/bin/proxy-ctl" --profile demo stop
 
+export PA_STATE_DIR="$STATE"
+export PA_STATE_DIR_EXPLICIT=true
 rm -f "$STATE/.lifecycle.lock" "$STATE/demo/.lifecycle.lock"
 bounded status "$TMP/bin/proxy-ctl" status >/dev/null
 [[ ! -e "$STATE/.lifecycle.lock" ]] || { echo 'read-only status unexpectedly created lifecycle lock' >&2; exit 1; }
+
+export PA_STATE_DIR="$STATE/demo"
+export PA_STATE_DIR_EXPLICIT=true
+bounded profile-status "$TMP/bin/proxy-ctl" --profile demo status >/dev/null
 [[ ! -e "$STATE/demo/.lifecycle.lock" ]] || { echo 'read-only profile status unexpectedly created lifecycle lock' >&2; exit 1; }
 
 echo 'cli lifecycle lock smoke: PASS'
