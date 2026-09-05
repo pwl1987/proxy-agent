@@ -28,7 +28,7 @@ health_recovery_lock_acquire() {
 health_recovery_lock_release() {
   [[ -n "${PA_HEALTH_RECOVERY_FD:-}" ]] || return 0
   flock -u "$PA_HEALTH_RECOVERY_FD" 2>/dev/null || true
-  eval "exec ${PA_HEALTH_RECOVERY_FD}>&-"
+  exec {PA_HEALTH_RECOVERY_FD}>&-
   unset PA_HEALTH_RECOVERY_FD
 }
 
