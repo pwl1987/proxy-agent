@@ -129,6 +129,33 @@ class WebUIHandler(core.GatewayHandler):
             return
         super().do_POST()
 
+    def do_GET(self) -> None:
+        if not self._require_network():
+            return
+        path = self.path.split("?", 1)[0]
+        if path in {"/", "/index.html"}:
+            self._serve_ui()
+            return
+        if path == "/config-form.js":
+            self._send_static(FORM_JS_PATH, "text/javascript; charset=utf-8")
+            return
+        super().do_GET()
+
+    def do_PUT(self) -> None:
+        if not self._require_network():
+            return
+        super().do_PUT()
+
+    def do_DELETE(self) -> None:
+        if not self._require_network():
+            return
+        super().do_DELETE()
+
+    def do_PATCH(self) -> None:
+        if not self._require_network():
+            return
+        super().do_PATCH()
+
     def _send_static(self, path: Path, content_type: str) -> None:
         try:
             body = path.read_bytes()
@@ -158,18 +185,6 @@ class WebUIHandler(core.GatewayHandler):
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(payload)
-
-    def do_GET(self) -> None:
-        if not self._require_network():
-            return
-        path = self.path.split("?", 1)[0]
-        if path in {"/", "/index.html"}:
-            self._serve_ui()
-            return
-        if path == "/config-form.js":
-            self._send_static(FORM_JS_PATH, "text/javascript; charset=utf-8")
-            return
-        super().do_GET()
 
 
 class WebUIServer(ThreadingHTTPServer):
