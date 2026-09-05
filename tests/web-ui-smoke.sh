@@ -48,7 +48,7 @@ status="$(curl -sS -D "$TMP/ui.headers" -o "$TMP/ui.html" -w '%{http_code}' "htt
 echo "ui_http_status=$status"
 if [[ "$status" != 200 ]]; then cat "$LOG" >&2; cat "$TMP/ui.html" >&2 || true; exit 1; fi
 grep -q 'proxy-agent.*Web Management' "$TMP/ui.html"
-grep -q 'Validate.*Diff' "$TMP/ui.html"
+grep -q '校验.*Diff' "$TMP/ui.html"
 grep -q '/api/v1/validate' "$TMP/ui.html"
 grep -q '/api/v1/revisions' "$TMP/ui.html"
 grep -q '/api/v1/apply' "$TMP/ui.html"
