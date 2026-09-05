@@ -142,6 +142,28 @@ state_json_quote() {
   printf '"%s"' "$value"
 }
 
+state_existing_path_health() {
+  local file="$(state_file)"
+  if [[ -r "$file" ]]; then
+    python3 - "$file" <<'PY'
+import json
+import sys
+from pathlib import Path
+try:
+    data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    path = data.get("health", {}).get("path")
+    if isinstance(path, dict):
+        print(json.dumps(path, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+        raise SystemExit(0)
+except (OSError, ValueError, TypeError, json.JSONDecodeError):
+    pass
+raise SystemExit(1)
+PY
+    return
+  fi
+  return 1
+}
+
 state_sync() {
   local backend_state='stopped' managed='false' pid='null' identity='' endpoint='' adapter_state='disabled' adapter_type='none'
   local started_at last_transition last_healthy last_unhealthy last_recovered path_health
@@ -154,7 +176,11 @@ state_sync() {
     identity="$(backend_process_identity 2>/dev/null || true)"
   fi
   endpoint="$(backend_endpoint 2>/dev/null || true)"
-  path_health="$(backend_health_detail 2>/dev/null || printf '%s' '{"transport_status":"unknown","jump_status":"unknown","target_status":"unknown","proxy_status":"unknown","overall_status":"unknown","reason":"backend_health_detail_unavailable","last_checked":null}')"
+  path_health="${PA_HEALTH_PATH_DETAIL:-}"
+  if [[ -z "$path_health" ]]; then
+    path_health="$(state_existing_path_health 2>/dev/null || true)"
+  fi
+  [[ -n "$path_health" ]] || path_health='{"transport_status":"unknown","jump_status":"unknown","target_status":"unknown","proxy_status":"unknown","overall_status":"unknown","reason":"health_not_checked","last_checked":null}'
   if [[ "${HTTP_ENABLED:-false}" == true ]]; then
     adapter_type='privoxy'
     if adapter_privoxy_status >/dev/null 2>&1; then adapter_state='ready'; else adapter_state='stopped'; fi
