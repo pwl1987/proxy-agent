@@ -3,7 +3,7 @@
   "backends": {
     "ssh-socks": {
       "managed": true,
-      "capabilities": ["socks5", "dynamic_dns", "stream_proxy", "supports_egress_path"],
+      "capabilities": ["socks5", "dynamic_dns", "stream_proxy", "supports_egress_path", "supports_jump", "supports_remote_dns"],
       "options": [
         {"name": "remote_host", "type": "string", "required": true},
         {"name": "remote_user", "type": "string", "required": true},
@@ -19,37 +19,23 @@
     "local-endpoint": {
       "managed": false,
       "capabilities": ["stream_proxy"],
-      "derived_capabilities": {
-        "socks5": "LOCAL_PROXY_URL uses socks5:// or socks5h://",
-        "http_native": "LOCAL_PROXY_URL uses http:// or https://"
-      },
-      "options": [
-        {"name": "proxy_url", "type": "string", "required": true},
-        {"name": "status_target", "type": "string", "required": false}
-      ]
+      "derived_capabilities": {"socks5": "LOCAL_PROXY_URL uses socks5:// or socks5h://", "http_native": "LOCAL_PROXY_URL uses http:// or https://"},
+      "options": [{"name": "proxy_url", "type": "string", "required": true}, {"name": "status_target", "type": "string", "required": false}]
     },
     "sing-box": {
       "managed": true,
       "capabilities": ["socks5", "stream_proxy"],
-      "options": [
-        {"name": "config_path", "type": "string", "required": true},
-        {"name": "binary", "type": "string", "required": false}
-      ]
+      "options": [{"name": "config_path", "type": "string", "required": true}, {"name": "binary", "type": "string", "required": false}]
     },
     "mihomo": {
       "managed": true,
       "capabilities": ["socks5", "stream_proxy"],
-      "options": [
-        {"name": "config_path", "type": "string", "required": true},
-        {"name": "binary", "type": "string", "required": false}
-      ]
+      "options": [{"name": "config_path", "type": "string", "required": true}, {"name": "binary", "type": "string", "required": false}]
     },
     "http-connect": {
       "managed": false,
       "capabilities": ["http_native", "stream_proxy"],
-      "options": [
-        {"name": "proxy_url", "type": "string", "required": true}
-      ]
+      "options": [{"name": "proxy_url", "type": "string", "required": true}]
     }
   }
 }
