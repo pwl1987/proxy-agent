@@ -19,11 +19,21 @@ audit = load("proxy-agent-audit-event.v1.json")
 control = load("proxy-agent-control-api.v1.json")
 backend = load("proxy-agent-backends.json")
 
+audit_events = audit["properties"]["event"]["enum"]
+required_events = {
+    "desired_state.activation_failed",
+    "rollback.activation_failed",
+    "runtime.start",
+    "runtime.stop",
+    "runtime.restart",
+    "runtime.test",
+    "runtime.diagnose",
+}
+assert required_events.issubset(audit_events), (required_events, audit_events)
 assert revision["$schema"].endswith("/draft/2020-12/schema")
 assert revision["properties"]["schema_version"]["const"] == 1
 assert "config" in revision["required"]
 assert audit["properties"]["schema_version"]["const"] == 1
-assert "desired_state.activation_failed" in audit["properties"]["event"]["enum"]
 assert control["properties"]["api_version"]["const"] == "v1"
 example = control["examples"][0]
 assert example["transport"]["kind"] == "http"
