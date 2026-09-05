@@ -53,18 +53,18 @@ if ! mkdir "$active" 2>/dev/null; then
   exit 90
 fi
 trap 'rmdir "$active"' EXIT
-printf 'installed-%s\n' "$$" >>"$TREE_INSTALL_SENTINEL.log"
-sleep 0.25
-EOF
-chmod +x "$TREE/install-user.sh"
-
-cat >"$TREE/bin/proxy-ctl" <<'EOF'
+mkdir -p "${BIN:?}"
+cat >"$BIN/proxy-ctl" <<'CTL'
 #!/usr/bin/env bash
 set -euo pipefail
 [[ "${1:-}" == validate ]] || exit 2
 exit 0
+CTL
+chmod +x "$BIN/proxy-ctl"
+printf 'installed-%s\n' "$$" >>"$TREE_INSTALL_SENTINEL.log"
+sleep 0.25
 EOF
-chmod +x "$TREE/bin/proxy-ctl"
+chmod +x "$TREE/install-user.sh"
 
 cat >"$PATH_BIN/systemctl" <<'EOF'
 #!/usr/bin/env bash
