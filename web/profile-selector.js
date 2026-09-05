@@ -26,7 +26,9 @@
     }
   };
 
-  window.proxyAgentLoadProfiles = async () => {
+  const loadProfiles = async () => {
+    if (select.dataset.profileLoaded === "1") return [];
+    select.dataset.profileLoaded = "1";
     try {
       const response = await fetch("/api/v1/profiles", { credentials: "same-origin" });
       const text = await response.text();
@@ -51,9 +53,22 @@
       }
       return names;
     } catch (error) {
+      delete select.dataset.profileLoaded;
       select.value = "";
       setMessage(`Profile discovery failed: ${error.message}；继续使用默认 profile。`);
       return [];
     }
   };
+
+  const waitForAuthentication = () => {
+    const login = document.getElementById("login");
+    const app = document.getElementById("app");
+    if (login && app && login.classList.contains("hidden") && !app.classList.contains("hidden")) {
+      void loadProfiles();
+      return;
+    }
+    window.setTimeout(waitForAuthentication, 250);
+  };
+
+  waitForAuthentication();
 })();
