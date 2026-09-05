@@ -53,7 +53,7 @@ revision_lock_acquire() {
   for _ in {1..100}; do
     if mkdir "$lock" 2>/dev/null; then
       now="$(date +%s)"
-      pid="$(revision_owner_pid)"
+      pid="${BASHPID:-$$}"
       printf '%s\n' "$pid" >"$lock/pid"
       printf '%s\n' "$(revision_proc_starttime "$pid" 2>/dev/null || printf 0)" >"$lock/starttime"
       printf '%s\n' "$now" >"$lock/created"
@@ -71,7 +71,7 @@ revision_lock_acquire() {
 revision_lock_release() {
   local lock="$(revision_lock_dir)" pid start current owner
   [[ -d "$lock" ]] || return 0
-  owner="$(revision_owner_pid)"
+  owner="${BASHPID:-$$}"
   pid="$(cat "$lock/pid" 2>/dev/null || true)"
   start="$(cat "$lock/starttime" 2>/dev/null || true)"
   current="$(revision_proc_starttime "$owner" 2>/dev/null || true)"
@@ -100,7 +100,7 @@ revision_record() {
   local config_json="$1" actor="${2:-local}" summary="${3:-configuration change}" validation="${4:-passed}" health="${5:-pending}"
   revision_init
   revision_lock_acquire || return 1
-  local owner="$(revision_owner_pid)" id="$(revision_next_id)" timestamp file tmp previous
+  local owner="${BASHPID:-$$}" id="$(revision_next_id)" timestamp file tmp previous
   previous="$(revision_current)"
   timestamp="$(date +%s)"
   file="$(revision_file "$id")"
@@ -123,7 +123,7 @@ revision_record_if_match() {
   revision_init; revision_lock_acquire || return 1
   local current; current="$(revision_current)"
   if [[ "$expected" != "$current" ]]; then printf 'revision conflict: expected revision %s, current revision is %s\n' "$expected" "$current" >&2; revision_lock_release; return 3; fi
-  local owner="$(revision_owner_pid)" id="$(revision_next_id)" timestamp file tmp previous; previous="$current"; timestamp="$(date +%s)"; file="$(revision_file "$id")"; tmp="${file}.tmp.$owner"
+  local owner="${BASHPID:-$$}" id="$(revision_next_id)" timestamp file tmp previous; previous="$current"; timestamp="$(date +%s)"; file="$(revision_file "$id")"; tmp="${file}.tmp.$owner"
   if ! python3 - "$config_json" "$actor" "$summary" "$validation" "$health" "$id" "$previous" "$timestamp" >"$tmp" <<'PY'
 import json, sys
 config=json.loads(sys.argv[1]); payload={"schema_version":1,"revision":int(sys.argv[6]),"previous_revision":int(sys.argv[7]),"timestamp":int(sys.argv[8]),"actor":sys.argv[2],"change_summary":sys.argv[3],"validation_result":sys.argv[4],"health_result":sys.argv[5],"config":config}; print(json.dumps(payload,ensure_ascii=False,separators=(",",":"),sort_keys=True))
@@ -136,18 +136,18 @@ revision_get() { local id="$1" file; [[ "$id" =~ ^[0-9]+$ ]] || return 1; file="
 revision_list() { revision_init; find "$(revision_dir)" -maxdepth 1 -type f -name '[0-9]*.json' -printf '%f\n' | sort -r; }
 
 revision_set_desired() {
-  local id="$1" config_json="$2" dir tmp owner; revision_get "$id" >/dev/null || return 1; revision_lock_acquire || return 1; owner="$(revision_owner_pid)"; dir="$(revision_dir)"; tmp="$(revision_desired_file).tmp.$owner"
+  local id="$1" config_json="$2" dir tmp owner; revision_get "$id" >/dev/null || return 1; revision_lock_acquire || return 1; owner="${BASHPID:-$$}"; dir="$(revision_dir)"; tmp="$(revision_desired_file).tmp.$owner"
   if ! printf '%s\n' "$config_json" >"$tmp"; then rm -f "$tmp"; revision_lock_release; return 1; fi
   mv -f "$tmp" "$(revision_desired_file)"; tmp="$(revision_desired_revision_file).tmp.$owner"; printf '%s\n' "$id" >"$tmp"; mv -f "$tmp" "$(revision_desired_revision_file)"; revision_lock_release
 }
 revision_set_desired_if_match() {
-  local expected="$1" id="$2" config_json="$3" dir tmp owner; revision_get "$id" >/dev/null || return 1; revision_lock_acquire || return 1; owner="$(revision_owner_pid)"; local current; current="$(revision_current)"
+  local expected="$1" id="$2" config_json="$3" dir tmp owner; revision_get "$id" >/dev/null || return 1; revision_lock_acquire || return 1; owner="${BASHPID:-$$}"; local current; current="$(revision_current)"
   if [[ "$expected" != "$current" ]]; then printf 'revision conflict: expected revision %s, current revision is %s\n' "$expected" "$current" >&2; revision_lock_release; return 3; fi
   dir="$(revision_dir)"; tmp="$(revision_desired_file).tmp.$owner"; if ! printf '%s\n' "$config_json" >"$tmp"; then rm -f "$tmp"; revision_lock_release; return 1; fi
   mv -f "$tmp" "$(revision_desired_file)"; tmp="$(revision_desired_revision_file).tmp.$owner"; printf '%s\n' "$id" >"$tmp"; mv -f "$tmp" "$(revision_desired_revision_file)"; revision_lock_release
 }
 revision_rollback_if_match() {
-  local expected="$1" target="$2" actor="${3:-local}" summary="${4:-rollback}" dir config_json owner; revision_init; [[ "$target" =~ ^[0-9]+$ ]] || return 1; dir="$(revision_dir)"; [[ -r "$(revision_file "$target")" ]] || return 1; revision_lock_acquire || return 1; owner="$(revision_owner_pid)"; local current; current="$(revision_current)"
+  local expected="$1" target="$2" actor="${3:-local}" summary="${4:-rollback}" dir config_json owner; revision_init; [[ "$target" =~ ^[0-9]+$ ]] || return 1; dir="$(revision_dir)"; [[ -r "$(revision_file "$target")" ]] || return 1; revision_lock_acquire || return 1; owner="${BASHPID:-$$}"; local current; current="$(revision_current)"
   if [[ "$expected" != "$current" ]]; then printf 'revision conflict: expected revision %s, current revision is %s\n' "$expected" "$current" >&2; revision_lock_release; return 3; fi
   config_json="$(cat "$(revision_file "$target")")" || { revision_lock_release; return 1; }
   config_json="$(python3 - "$config_json" <<'PY'
