@@ -90,6 +90,7 @@ Path Health smoke、Functional、ShellCheck、Upgrade Transaction Gate 以及既
 
 - `bin/proxy-agent-web` authenticated Web Gateway。
 - 默认 loopback listener；非 loopback 强制 TLS。
+- `PA_WEB_ALLOW_CIDRS` / `--allow-cidr` 实现显式管理面源地址 ACL；ACL 在 healthz、静态 UI、session 与 Control API proxy 之前生效。
 - Gateway 通过 Unix socket 调用现有 Control API v1，不直接拥有 revision/audit/runtime/reconcile 状态。
 - 已有 read-only GET facade、`no-store` 响应与 mutation route allowlist。
 
@@ -102,38 +103,53 @@ Path Health smoke、Functional、ShellCheck、Upgrade Transaction Gate 以及既
 - 所有 Web POST 控制操作要求 session + `X-CSRF-Token`，并校验 Origin/Referer。
 - 登录失败按 peer IP 进行 60 秒窗口 5 次失败限流，超限返回 429。
 - Web POST 已接到既有 Control API v1 的 validate/revisions/apply/rollback/runtime 路由，不复制其 validation、revision、audit、activation、reconcile 逻辑。
-- `tests/web-gateway-smoke.sh` 覆盖 session、CSRF、rate limit、control proxy、TLS listener boundary、logout 与安全方法边界。
+- `tests/web-gateway-smoke.sh`、`tests/web-auth-audit-smoke.sh` 覆盖 session、CSRF、rate limit、control proxy、TLS listener boundary、logout、Profile discovery 与审计边界。
 
 ### 已落地：Configuration Management UI
 
-- 新增 `web/index.html`，提供 authenticated typed configuration editor。
-- 新增 `bin/proxy-agent-web-ui`，复用现有 Gateway 的 session、CSRF、rate-limit 与 Unix-socket Control API 边界。
-- 页面支持 profile 参数、runtime/health/revision 概览、typed JSON 编辑、Validation、结构化 Diff、Revision 创建与 Apply。
+- `web/index.html` 提供 authenticated typed configuration editor。
+- `bin/proxy-agent-web-ui` 复用现有 Gateway 的 session、CSRF、rate-limit、ACL 与 Unix-socket Control API 边界。
+- `web/config-form.js` 已支持 `ssh-socks`、`local-endpoint`、`sing-box`、`mihomo`、`http-connect` Backend，以及 SSH direct/jump Egress Path、DNS mode、listeners、health、SSH host-key checking。
+- `web/profile-selector.js` 通过只读 `GET /api/v1/profiles` 发现 profile 名称，空值继续表示默认 profile。
+- `web/config-form-sync.js` 修复异步 `loadState()` 更新 typed JSON 后结构化表单不自动同步的问题，保持现有 `form-load` 逻辑为唯一字段映射源。
+- 页面支持 runtime/health/revision 概览、typed JSON 编辑、Validation、结构化 Diff、Revision 创建与 Apply。
 - `create revision` 使用 `if_match_revision`，并发变化由 Control API 返回 409；UI 不实现第二套 revision head。
 - Apply 使用新建 revision 作为 optimistic-concurrency 边界，并继续委托既有 reconcile。
+- `web/events-view.js` 消费现有 `GET /api/v1/events`，只读显示最近审计事件，不直接读 Audit Store。
+- `bin/proxy-agent-api-auth` 对 `actor=web-ui` 的 remote mutation 增加 durable admission audit：审计无法提交时返回 `503 audit_unavailable`，不向核心 Control API 转发；本地 Control API 的 `safe_audit()` best-effort 兼容语义保持不变。
 - `Containerfile` 显式打包 `web/`。
-- CI 增加 Web UI syntax check 与 `tests/web-ui-smoke.sh`。
+- CI 的 Web UI syntax gate 已覆盖 `config-form.js`、`profile-selector.js`、`config-form-sync.js`、`events-view.js` 等 Web JavaScript 资产，并持续执行完整 Web/UI smoke。
 
-### UI 调用链与状态边界
+### UI / Control / Audit 调用链与状态边界
 
 ```text
 Browser
   -> Web UI
-  -> session / CSRF
+  -> session / CSRF / LAN ACL
   -> Web Gateway
   -> Unix socket
+  -> proxy-agent-api-auth
   -> Control API v1
   -> validate
   -> revision store / audit
   -> reconcile / desired-observed
   -> runtime / health
+  -> /api/v1/events -> audit-store read
 ```
 
-UI 仅维护页面生命周期内的 `loadedConfig`、`baseRevision`、`pendingRevision` 与最后一次 validated candidate；权威状态继续由现有 Control API / revision / reconcile / runtime 层拥有。
+UI 仅维护页面生命周期内的 `loadedConfig`、`baseRevision`、`pendingRevision` 与最后一次 validated candidate；Profile selector、structured form、event view 都是 presentation layer，不拥有权威状态。
+
+远程 mutation 的审计边界位于实际部署的 `proxy-agent-api-auth` wrapper：`actor=web-ui` 的 mutation 在进入核心 Control API 前必须先成功写入 admission audit；审计 Store 不可用时返回非成功语义并阻断转发。现有本地 Control API 的 `safe_audit()` 不为 0.4.x 行为引入新的失败语义。
 
 ### 当前非目标
 
-RBAC、多租户、持久 session store、独立 ACL engine、丰富 Profile/Backend/Egress 表单组件仍未完成。后续切片继续复用这一安全边界与 Control API 权威状态。
+RBAC、多租户、SSO/OIDC、持久 session store、独立 ACL engine、Profile create/delete/write API、自动 failover/balancing、multi-egress selection、universal zero-downtime activation 仍未完成。后续切片继续复用这一安全边界与 Control API 权威状态。
+
+### 0.5.2 当前集成基线
+
+截至当前 `main`，0.5.2 的 Web/LAN 管理面代码已经完成认证、显式源地址 ACL、Profile discovery/selector、结构化 Backend/Egress 表单、异步表单同步、health/revision/event 只读视图以及 remote mutation audit admission boundary；相关 PR 的 CI 与 Upgrade Transaction Gate 均已通过后合并。
+
+0.5.2 尚未正式发布：当前仓库 `VERSION` 仍为 `0.5.0`，因此不能把当前 `main` 误标记为 `v0.5.2` release；正式 release cut 前必须按现有 tag/VERSION 治理规则完成版本更新、Tag、容器 digest 与 provenance 收口。
 
 ## 发布治理变更
 
