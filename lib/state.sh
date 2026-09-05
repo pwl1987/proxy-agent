@@ -18,6 +18,10 @@ state_lock_dir() {
   printf '%s/.state.lock' "$(state_dir)"
 }
 
+state_lifecycle_lock_file() {
+  printf '%s/.lifecycle.lock' "$(state_dir)"
+}
+
 state_proc_starttime() {
   local pid="$1"
   [[ -r "/proc/$pid/stat" ]] || return 1
@@ -43,7 +47,7 @@ state_lock_is_stale() {
 
 state_lock_acquire() {
   mkdir -p "$(state_dir)"
-  local lock_dir="$(state_lock_dir)" now
+  local lock_dir="$(state_lock_dir)" now quarantine
   for _ in {1..100}; do
     if mkdir "$lock_dir" 2>/dev/null; then
       now="$(date +%s)"
@@ -53,7 +57,10 @@ state_lock_acquire() {
       return 0
     fi
     if state_lock_is_stale; then
-      rm -rf "$lock_dir"
+      quarantine="${lock_dir}.stale.$$.$now"
+      if mv "$lock_dir" "$quarantine" 2>/dev/null; then
+        rm -rf -- "$quarantine"
+      fi
       continue
     fi
     sleep 0.05
@@ -62,7 +69,30 @@ state_lock_acquire() {
 }
 
 state_lock_release() {
-  rm -rf "$(state_lock_dir)"
+  local lock_dir="$(state_lock_dir)" quarantine
+  [[ -d "$lock_dir" ]] || return 0
+  quarantine="${lock_dir}.release.$$"
+  if mv "$lock_dir" "$quarantine" 2>/dev/null; then
+    rm -rf -- "$quarantine"
+  fi
+}
+
+state_lifecycle_lock_acquire() {
+  mkdir -p "$(state_dir)"
+  exec {PA_LIFECYCLE_FD}>"$(state_lifecycle_lock_file)"
+  chmod 0600 "$(state_lifecycle_lock_file)"
+  if ! command -v flock >/dev/null 2>&1; then
+    die '缺少 flock，无法保证生命周期并发锁'
+  fi
+  flock -x "$PA_LIFECYCLE_FD"
+}
+
+state_lifecycle_lock_release() {
+  if [[ -n "${PA_LIFECYCLE_FD:-}" ]]; then
+    flock -u "$PA_LIFECYCLE_FD" || true
+    eval "exec ${PA_LIFECYCLE_FD}>&-"
+    unset PA_LIFECYCLE_FD
+  fi
 }
 
 state_epoch() {
