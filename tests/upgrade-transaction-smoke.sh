@@ -68,9 +68,38 @@ chmod +x "$TREE/install-user.sh"
 
 cat >"$PATH_BIN/systemctl" <<'EOF'
 #!/usr/bin/env bash
-exit 1
+set -euo pipefail
+if [[ "${1:-}" == --user ]]; then
+  shift
+fi
+case "${1:-}" in
+  is-active)
+    [[ "${FAKE_SYSTEMD_ACTIVE:-false}" == true ]]
+    ;;
+  stop)
+    : >"${FAKE_SYSTEMD_STOP_SIGNAL:?}"
+    ;;
+  daemon-reload|start)
+    ;;
+  *)
+    exit 1
+    ;;
+esac
 EOF
 chmod +x "$PATH_BIN/systemctl"
+
+cat >"$WORK/hold-lock.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+source "$1/lib/state.sh"
+state_lifecycle_lock_acquire
+trap 'state_lifecycle_lock_release' EXIT
+: >"$2/holder-ready"
+while [[ ! -e "$2/stop-signal" ]]; do
+  sleep 0.02
+done
+EOF
+chmod +x "$WORK/hold-lock.sh"
 
 export HOME="$HOME_DIR"
 export XDG_CONFIG_HOME="$CONFIG_HOME"
@@ -84,6 +113,55 @@ mkdir -p "$XDG_RUNTIME_DIR"
 
 printf 'old-version\n' >"$PREFIX/marker"
 
+# Regression guard: an active service owns the lifecycle lock while upgrade
+# starts. systemctl stop must run before upgrade acquires that lock, otherwise
+# this transaction deadlocks indefinitely.
+export FAKE_SYSTEMD_ACTIVE=true
+export FAKE_SYSTEMD_STOP_SIGNAL="$TMP/stop-signal"
+rm -f "$TMP/holder-ready" "$TMP/stop-signal"
+"$WORK/hold-lock.sh" "$TREE" "$TMP" >"$WORK/holder.log" 2>&1 &
+holder_pid=$!
+for _ in {1..100}; do
+  [[ -e "$TMP/holder-ready" ]] && break
+  sleep 0.02
+done
+[[ -e "$TMP/holder-ready" ]] || { cat "$WORK/holder.log" >&2; kill "$holder_pid" 2>/dev/null || true; exit 1; }
+set +e
+( cd "$TREE" && ./upgrade-user.sh ) >"$WORK/active-service.log" 2>&1 &
+active_upgrade_pid=$!
+set -e
+for _ in {1..100}; do
+  [[ -e "$TMP/stop-signal" ]] && break
+  sleep 0.02
+done
+[[ -e "$TMP/stop-signal" ]] || { cat "$WORK/active-service.log" >&2; kill "$active_upgrade_pid" "$holder_pid" 2>/dev/null || true; exit 1; }
+wait "$holder_pid"
+wait "$active_upgrade_pid"
+unset FAKE_SYSTEMD_ACTIVE
+
+cat >"$TREE/install-user.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+: "${TREE_INSTALL_SENTINEL:?}"
+active="$TREE_INSTALL_SENTINEL.active"
+if ! mkdir "$active" 2>/dev/null; then
+  echo 'overlapping upgrade transaction detected' >&2
+  exit 90
+fi
+trap 'rmdir "$active"' EXIT
+mkdir -p "${BIN:?}"
+cat >"$BIN/proxy-ctl" <<'CTL'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${1:-}" == validate ]] || exit 2
+exit 0
+CTL
+chmod +x "$BIN/proxy-ctl"
+printf 'installed-%s\n' "$$" >>"$TREE_INSTALL_SENTINEL.log"
+sleep 0.25
+EOF
+chmod +x "$TREE/install-user.sh"
+
 set +e
 ( cd "$TREE" && ./upgrade-user.sh ) >"$WORK/a.log" 2>&1 &
 pid_a=$!
@@ -96,7 +174,7 @@ set -e
 (( rc_a == 0 )) || { cat "$WORK/a.log" >&2; exit 1; }
 (( rc_b == 0 )) || { cat "$WORK/b.log" >&2; exit 1; }
 [[ ! -d "$TREE_INSTALL_SENTINEL.active" ]]
-[[ "$(wc -l <"$TREE_INSTALL_SENTINEL.log")" -eq 2 ]]
+[[ "$(wc -l <"$TREE_INSTALL_SENTINEL.log")" -eq 3 ]]
 
 cat >"$TREE/install-user.sh" <<'EOF'
 #!/usr/bin/env bash
