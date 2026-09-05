@@ -1,0 +1,36 @@
+[Unit]
+Description=proxy-agent Web management UI
+After=network.target proxy-agent-api.service
+Requires=proxy-agent-api.service
+ConditionPathExists=/etc/proxy-agent/web-admin-token
+
+[Service]
+Type=simple
+User=@SERVICE_USER@
+Group=@SERVICE_GROUP@
+UMask=0077
+Environment=PA_WEB_LISTEN=127.0.0.1
+Environment=PA_WEB_PORT=8443
+Environment=PA_CONTROL_SOCKET=/run/proxy-agent/control.sock
+Environment=PA_STATE_DIR=/run/proxy-agent
+Environment=PA_LOG_DIR=/var/log/proxy-agent
+Environment=PA_CONFIG=/etc/proxy-agent/proxy-agent.conf
+ExecStart=/usr/bin/python3 @PREFIX@/bin/proxy-agent-web-ui --listen ${PA_WEB_LISTEN} --port ${PA_WEB_PORT} --control-socket ${PA_CONTROL_SOCKET} --admin-token-file /etc/proxy-agent/web-admin-token
+Restart=on-failure
+RestartSec=2
+KillMode=control-group
+TimeoutStopSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target
