@@ -44,31 +44,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME#v}"
+          release_version="${GITHUB_REF_NAME#v}"
           version="$(tr -d '[:space:]' < VERSION)"
-          echo "release_version=$version"
-          echo "tag_version=$tag"
-          [[ "$tag" == "$version" ]] || {
-            echo "ERROR: tag $tag does not match VERSION $version" >&2
+          echo "release_version=$release_version"
+          echo "tag_version=${GITHUB_REF_NAME#v}"
+          echo "version_file=$version"
+          [[ "$release_version" == "$version" ]] || {
+            echo "ERROR: tag $release_version does not match VERSION $version" >&2
             exit 1
           }
           find bin lib backends adapters integrations tests -type f -name '*.sh' -print0 \
             | xargs -0 -r -n1 bash -n
           bash -n install.sh install-user.sh upgrade.sh upgrade-user.sh
-          echo 'shell syntax validation=passed'
+          echo 'shell_syntax=passed'
 
       - name: Build container image
         env:
           IMAGE_NAME: ghcr.io/${{ github.repository }}
-          VERSION: ${{ github.ref_name }}
+          IMAGE_TAG: ${{ github.ref_name }}
+        shell: bash
         run: |
           set -euo pipefail
           echo '=== CONTAINER BUILD ==='
           echo "image=$IMAGE_NAME"
-          echo "tag=$VERSION"
-          docker build --pull -f Containerfile -t "$IMAGE_NAME:$VERSION" -t "$IMAGE_NAME:latest" .
-          docker image inspect "$IMAGE_NAME:$VERSION" >/dev/null
-          docker image inspect --format='image_id={{.Id}}\ncreated={{.Created}}\nrepo_tags={{join .RepoTags ","}}' "$IMAGE_NAME:$VERSION"
+          echo "tag=$IMAGE_TAG"
+          docker build --pull -f Containerfile -t "$IMAGE_NAME:$IMAGE_TAG" -t "$IMAGE_NAME:latest" .
+          docker image inspect "$IMAGE_NAME:$IMAGE_TAG" >/dev/null
+          docker image inspect --format='image_id={{.Id}}\ncreated={{.Created}}\nrepo_tags={{join .RepoTags ","}}' "$IMAGE_NAME:$IMAGE_TAG"
           echo 'container_build=passed'
 
       - name: Login to GHCR
@@ -81,27 +83,26 @@ jobs:
       - name: Push container image and record provenance
         env:
           IMAGE_NAME: ghcr.io/${{ github.repository }}
-          VERSION: ${{ github.ref_name }}
+          IMAGE_TAG: ${{ github.ref_name }}
         shell: bash
         run: |
           set -euo pipefail
           echo '=== CONTAINER PUBLISH ==='
-          docker push "$IMAGE_NAME:$VERSION"
-          version_digest="$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_NAME:$VERSION")"
+          docker push "$IMAGE_NAME:$IMAGE_TAG"
+          version_digest="$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_NAME:$IMAGE_TAG")"
           echo "version_digest=$version_digest"
-          printf '%s\n' "$version_digest" > container-digest.txt
           docker push "$IMAGE_NAME:latest"
           latest_digest="$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_NAME:latest")"
           echo "latest_digest=$latest_digest"
           printf '%s\n' "$version_digest" > container-digest.txt
           {
-            echo "release_version=$VERSION"
+            echo "release_version=${IMAGE_TAG#v}"
             echo "repository=$GITHUB_REPOSITORY"
             echo "tag=$GITHUB_REF_NAME"
             echo "source_commit=$(git rev-parse HEAD)"
             echo "source_tree=$(git rev-parse HEAD^{tree})"
             echo "source_tag_commit=$(git rev-list -n1 refs/tags/$GITHUB_REF_NAME^{commit})"
-            echo "image=$IMAGE_NAME:$VERSION"
+            echo "image=$IMAGE_NAME:$IMAGE_TAG"
             echo "image_digest=$version_digest"
             echo "latest_image=$IMAGE_NAME:latest"
             echo "latest_digest=$latest_digest"
