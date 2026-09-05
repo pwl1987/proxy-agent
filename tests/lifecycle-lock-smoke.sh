@@ -69,4 +69,19 @@ state_lifecycle_lock_release
 wait "$holder"
 (( elapsed_ms >= 250 )) || { echo "lifecycle lock did not block on Python holder: ${elapsed_ms}ms" >&2; exit 1; }
 
+# A caller-controlled symlink must be rejected before the lock helper applies
+# permissions or otherwise mutates the pointed-to inode.
+target="$TMP/lock-target"
+printf 'sentinel\n' >"$target"
+ln -s "$target" "$TMP/state/.lifecycle.lock"
+set +e
+( state_lifecycle_lock_acquire ) >"$TMP/symlink.out" 2>&1
+symlink_rc=$?
+set -e
+(( symlink_rc != 0 )) || { cat "$TMP/symlink.out" >&2; exit 1; }
+[[ -L "$TMP/state/.lifecycle.lock" ]]
+[[ "$(cat "$target")" == 'sentinel' ]]
+
+rm -f "$TMP/state/.lifecycle.lock"
+
 echo 'lifecycle lock smoke: PASS'
