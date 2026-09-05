@@ -26,7 +26,7 @@
     }
   };
 
-  const loadProfiles = async () => {
+  window.proxyAgentLoadProfiles = async () => {
     try {
       const response = await fetch("/api/v1/profiles", { credentials: "same-origin" });
       const text = await response.text();
@@ -49,11 +49,11 @@
       if (names.length === 0) {
         select.title = "当前没有已发现的 named profile；空值继续表示默认 profile。";
       }
+      return names;
     } catch (error) {
       select.value = "";
       setMessage(`Profile discovery failed: ${error.message}；继续使用默认 profile。`);
+      return [];
     }
   };
-
-  loadProfiles();
 })();
