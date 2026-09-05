@@ -78,7 +78,11 @@ case "${1:-}" in
   is-active)
     exit 0
     ;;
-  stop|daemon-reload)
+  stop)
+    [[ -n "${RELEASE_ACTIVE_LOCK:-}" ]] && : >"$RELEASE_ACTIVE_LOCK"
+    exit 0
+    ;;
+  daemon-reload)
     exit 0
     ;;
   start)
@@ -97,13 +101,21 @@ chmod +x "$PATH_BIN/systemctl"
 cat >"$PATH_BIN/prove-lock-release" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-# systemctl start must be able to reacquire the same lifecycle lock. The
-# upgrade process has already completed its filesystem transaction and must
-# release the lock before handing control back to systemd.
 source "$TREE/lib/state.sh"
 timeout 2s bash -c 'source "$1"; state_lifecycle_lock_acquire; state_lifecycle_lock_release' _ "$TREE/lib/state.sh"
 EOF
 chmod +x "$PATH_BIN/prove-lock-release"
+
+cat >"$TREE/hold-lock.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+source "$TREE/lib/state.sh"
+state_lifecycle_lock_acquire
+touch "$ACTIVE_LOCK_HELD"
+while [[ ! -e "$RELEASE_ACTIVE_LOCK" ]]; do sleep 0.02; done
+state_lifecycle_lock_release
+EOF
+chmod +x "$TREE/hold-lock.sh"
 
 export HOME="$HOME_DIR"
 export XDG_CONFIG_HOME="$CONFIG_HOME"
@@ -113,8 +125,25 @@ export PREFIX="$PREFIX"
 export BIN="$BIN"
 export TREE_INSTALL_SENTINEL="$TMP/install-critical"
 export TREE="$TREE"
+export ACTIVE_LOCK_HELD="$TMP/active-lock-held"
+export RELEASE_ACTIVE_LOCK="$TMP/release-active-lock"
 export PATH="$PATH_BIN:$PATH"
 mkdir -p "$XDG_RUNTIME_DIR"
+
+# Model a running proxy-ctl run that owns the lifecycle lock. systemctl stop
+# must run before upgrade acquires that lock; otherwise the old implementation
+# deadlocks before it can ask systemd to stop the service.
+rm -f "$ACTIVE_LOCK_HELD" "$RELEASE_ACTIVE_LOCK"
+"$TREE/hold-lock.sh" >/"$TMP/holder.log" 2>&1 &
+holder_pid=$!
+for _ in {1..100}; do [[ -e "$ACTIVE_LOCK_HELD" ]] && break; sleep 0.02; done
+[[ -e "$ACTIVE_LOCK_HELD" ]]
+set +e
+( cd "$TREE" && timeout 5s ./upgrade-user.sh ) >"$WORK/active-upgrade.log" 2>&1
+active_rc=$?
+set -e
+wait "$holder_pid"
+(( active_rc == 0 )) || { cat "$WORK/active-upgrade.log" >&2; exit 1; }
 
 printf 'old-version\n' >"$PREFIX/marker"
 
