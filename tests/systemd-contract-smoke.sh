@@ -11,6 +11,14 @@ assert_contains() {
   }
 }
 
+assert_absent() {
+  local file="$1" unexpected="$2"
+  if grep -Fqx "$unexpected" "$ROOT/$file"; then
+    echo "systemd contract mismatch: $file: forbidden exact line: $unexpected" >&2
+    return 1
+  fi
+}
+
 for unit in "$ROOT"/systemd/*.service "$ROOT"/systemd/*.timer "$ROOT"/systemd-user/*.service "$ROOT"/systemd-user/*.timer; do
   grep -Eq '^\[(Unit|Service|Timer|Install)\]$' "$unit" || {
     echo "systemd contract mismatch: invalid section header: $unit" >&2
@@ -21,6 +29,8 @@ done
 assert_contains systemd/proxy-agent.service 'Type=simple'
 assert_contains systemd/proxy-agent.service 'ExecStartPre=/bin/bash @PREFIX@/bin/proxy-agent-reconcile --bootstrap'
 assert_contains systemd/proxy-agent.service 'ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl run'
+assert_contains systemd/proxy-agent.service 'ExecReload=/bin/systemctl restart %n'
+assert_absent systemd/proxy-agent.service 'ExecStop=/bin/bash @PREFIX@/bin/proxy-ctl stop'
 assert_contains systemd/proxy-agent.service 'Environment=PA_CONFIG=/run/proxy-agent/runtime/proxy-agent.conf'
 assert_contains systemd/proxy-agent.service 'Environment=PA_BOOTSTRAP_CONFIG=/etc/proxy-agent/proxy-agent.conf'
 assert_contains systemd/proxy-agent.service 'User=@SERVICE_USER@'
@@ -36,6 +46,8 @@ assert_contains systemd/proxy-agent@.service 'Environment=PA_CONFIG=/run/proxy-a
 assert_contains systemd/proxy-agent@.service 'Environment=PA_BOOTSTRAP_CONFIG=/etc/proxy-agent/profiles/%i.conf'
 assert_contains systemd/proxy-agent@.service 'ExecStartPre=/bin/bash @PREFIX@/bin/proxy-agent-reconcile --bootstrap'
 assert_contains systemd/proxy-agent@.service 'ExecStart=/bin/bash @PREFIX@/bin/proxy-ctl --profile %i run'
+assert_contains systemd/proxy-agent@.service 'ExecReload=/bin/systemctl restart %n'
+assert_absent systemd/proxy-agent@.service 'ExecStop=/bin/bash @PREFIX@/bin/proxy-ctl --profile %i stop'
 assert_contains systemd/proxy-agent@.service 'User=@SERVICE_USER@'
 
 assert_contains systemd/proxy-agent-api.service 'Type=simple'
@@ -62,11 +74,15 @@ assert_contains systemd/proxy-agent-reconcile.timer 'OnUnitActiveSec=30s'
 
 assert_contains systemd-user/proxy-agent.service 'Type=simple'
 assert_contains systemd-user/proxy-agent.service 'ExecStart=@BIN@/proxy-ctl run'
+assert_contains systemd-user/proxy-agent.service 'ExecReload=/usr/bin/systemctl --user restart %n'
+assert_absent systemd-user/proxy-agent.service 'ExecStop=@BIN@/proxy-ctl stop'
 assert_contains systemd-user/proxy-agent.service 'Environment=PA_STATE_DIR=%t/proxy-agent/run'
 assert_contains systemd-user/proxy-agent.service 'Environment=PA_LOG_DIR=%t/proxy-agent/log'
 assert_contains systemd-user/proxy-agent.service 'ProtectHome=read-only'
 
 assert_contains systemd-user/proxy-agent@.service 'ExecStart=@BIN@/proxy-ctl --profile %i run'
+assert_contains systemd-user/proxy-agent@.service 'ExecReload=/usr/bin/systemctl --user restart %n'
+assert_absent systemd-user/proxy-agent@.service 'ExecStop=@BIN@/proxy-ctl --profile %i stop'
 assert_contains systemd-user/proxy-agent@.service 'Environment=PA_STATE_DIR=%t/proxy-agent/run/%i'
 
 assert_contains systemd-user/proxy-agent-health@.service 'ExecStart=@BIN@/proxy-agent-health --profile %i'
