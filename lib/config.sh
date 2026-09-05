@@ -39,6 +39,10 @@ config_validate_proxy_url() {
     return
   }
   hostport="${BASH_REMATCH[2]}"
+  [[ "$hostport" != *@* ]] || {
+    config_error "$name must not contain URL userinfo; credentials are not a supported configuration mechanism"
+    return
+  }
   if [[ "$hostport" =~ ^\[[0-9A-Fa-f:]+\](:([0-9]+))?$ ]]; then
     port="${BASH_REMATCH[2]:-}"
   elif [[ "$hostport" =~ ^([^:]+)(:([0-9]+))?$ ]]; then
