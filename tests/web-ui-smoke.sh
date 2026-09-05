@@ -100,6 +100,7 @@ grep -q '/api/v1/revisions' "$TMP/ui.html"
 grep -q '/api/v1/apply' "$TMP/ui.html"
 grep -q 'config-form.js' "$TMP/ui.html"
 grep -q 'profile-selector.js' "$TMP/ui.html"
+grep -q 'config-form-sync.js' "$TMP/ui.html"
 grep -qi 'Cache-Control: no-store' "$TMP/ui.headers"
 
 status="$(curl -sS -D "$TMP/js.headers" -o "$TMP/config-form.js" -w '%{http_code}' "http://127.0.0.1:$PORT/config-form.js" || true)"
@@ -115,6 +116,13 @@ grep -q 'loadProfiles' "$TMP/profile-selector.js"
 grep -q '/api/v1/profiles' "$TMP/profile-selector.js"
 grep -q 'profileSelectorBound' "$TMP/profile-selector.js"
 grep -qi 'no-store' "$TMP/profile-js.headers"
+
+status="$(curl -sS -D "$TMP/sync-js.headers" -o "$TMP/config-form-sync.js" -w '%{http_code}' "http://127.0.0.1:$PORT/config-form-sync.js" || true)"
+test "$status" = 200 || { cat "$LOG" >&2; cat "$TMP/config-form-sync.js" >&2 || true; exit 1; }
+grep -q 'syncFromLoadedJson' "$TMP/config-form-sync.js"
+grep -q 'form-load' "$TMP/config-form-sync.js"
+grep -q 'configSyncBound' "$TMP/config-form-sync.js"
+grep -qi 'no-store' "$TMP/sync-js.headers"
 
 status="$(curl -sS -D "$TMP/login.headers" -o "$TMP/login.body" -w '%{http_code}' \
   -c "$COOKIE_JAR" \

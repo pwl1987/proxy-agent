@@ -32,6 +32,8 @@ jobs:
           bash -n upgrade-user.sh
           python3 -m py_compile lib/legacy-typed-export.py lib/typed-legacy-export.py bin/proxy-agent-api bin/proxy-agent-api-auth bin/proxy-agent-reconcile bin/proxy-agent-web bin/proxy-agent-web-ui
           node --check web/config-form.js
+          node --check web/profile-selector.js
+          node --check web/config-form-sync.js
       - name: Typed config smoke
         run: bash tests/typed-config-smoke.sh
       - name: Legacy to typed config smoke
