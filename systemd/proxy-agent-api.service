@@ -11,7 +11,7 @@ RuntimeDirectory=proxy-agent
 Environment=PA_STATE_DIR=/run/proxy-agent
 Environment=PA_LOG_DIR=/var/log/proxy-agent
 Environment=PA_CONFIG=/etc/proxy-agent/proxy-agent.conf
-ExecStart=/usr/bin/python3 @PREFIX@/bin/proxy-agent-api --socket /run/proxy-agent/control.sock
+ExecStart=/usr/bin/python3 @PREFIX@/bin/proxy-agent-api-auth --socket /run/proxy-agent/control.sock
 Restart=on-failure
 RestartSec=2
 KillMode=control-group

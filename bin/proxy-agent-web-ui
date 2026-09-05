@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import hmac
 import importlib.machinery
 import importlib.util
 import ipaddress
+import json
 import os
 import ssl
+import time
 from http import HTTPStatus
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -39,6 +42,60 @@ def is_loopback(host: str) -> bool:
 
 
 class WebUIHandler(core.GatewayHandler):
+    def _audit_auth(self, event: str, status: str, reason: str | None = None) -> None:
+        peer = self.client_address[0] if self.client_address else "unknown"
+        payload = {
+            "event": event,
+            "status": status,
+            "peer": peer,
+            "timestamp": int(time.time()),
+        }
+        if reason:
+            payload["reason"] = reason
+        try:
+            body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            status_code, response_body, _ = self.gateway.control.request("POST", "/api/v1/auth-events", body=body, content_type="application/json")
+            if status_code not in {HTTPStatus.ACCEPTED, HTTPStatus.OK}:
+                print(f"web-ui: auth audit rejected status={status_code} body={response_body[:256]!r}", flush=True)
+        except Exception as exc:
+            print(f"web-ui: auth audit failed: {exc}", flush=True)
+
+    def _login(self) -> None:
+        peer = self.client_address[0] if self.client_address else "unknown"
+        if not self.gateway.login_limiter.allowed(peer):
+            self._audit_auth("login.rate_limited", "blocked", "rate_limit")
+            self._send_error(HTTPStatus.TOO_MANY_REQUESTS, "login_rate_limited", "too many login attempts")
+            return
+        try:
+            body = self._read_json_body() or {}
+            token = str(body.get("token", ""))
+        except Exception:
+            token = ""
+        if not hmac.compare_digest(token, self.gateway.admin_token):
+            self.gateway.login_limiter.record_failure(peer)
+            self._audit_auth("login.failure", "failed", "invalid_credentials")
+            self._send_error(HTTPStatus.UNAUTHORIZED, "invalid_credentials", "invalid credentials")
+            return
+        if not self._request_origin_valid():
+            self._audit_auth("login.failure", "failed", "invalid_origin")
+            self._send_error(HTTPStatus.FORBIDDEN, "invalid_origin", "request origin is not allowed")
+            return
+        session_id, csrf = self.gateway.sessions.create()
+        self._audit_auth("login.success", "succeeded")
+        payload = json.dumps({"authenticated": True, "csrf_token": csrf}, separators=(",", ":")).encode()
+        self._send_json(HTTPStatus.OK, payload, [("Set-Cookie", self._set_session_cookie(session_id))])
+
+    def do_POST(self) -> None:
+        path = self.path.split("?", 1)[0]
+        if path == "/session/logout":
+            session = self._session()
+            if session is not None:
+                self.gateway.sessions.delete(session[0])
+                self._audit_auth("logout", "succeeded")
+            self._send_json(HTTPStatus.NO_CONTENT, b"", [("Set-Cookie", self._clear_session_cookie())])
+            return
+        super().do_POST()
+
     def _send_static(self, path: Path, content_type: str) -> None:
         try:
             body = path.read_bytes()
