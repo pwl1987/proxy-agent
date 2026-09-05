@@ -12,6 +12,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ -f "$ROOT/install.sh" ]] || { echo 'upgrade.sh 必须从 proxy-agent 源码目录运行' >&2; exit 1; }
 [[ -f "$ETC/proxy-agent.conf" ]] || { echo "未找到配置文件：$ETC/proxy-agent.conf" >&2; exit 1; }
 
+# Share the lifecycle lock with proxy-ctl/reconciler for the default system profile.
+PA_STATE_DIR="${PA_STATE_DIR:-/run/proxy-agent}"
+# shellcheck disable=SC1091
+source "$ROOT/lib/state.sh"
+state_lifecycle_lock_acquire
+release_lifecycle_lock() { state_lifecycle_lock_release; }
+cleanup_lifecycle() { release_lifecycle_lock; cleanup_backup; }
+
 was_active=false
 if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet "$SERVICE_NAME"; then
   was_active=true
@@ -19,7 +27,7 @@ fi
 
 backup_root="$(mktemp -d /tmp/proxy-agent-upgrade.XXXXXX)"
 cleanup_backup() { rm -rf -- "$backup_root"; }
-trap cleanup_backup EXIT
+trap cleanup_lifecycle EXIT
 
 backup_tree() {
   local source="$1" target="$2"
