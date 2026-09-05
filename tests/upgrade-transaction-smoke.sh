@@ -68,9 +68,42 @@ chmod +x "$TREE/install-user.sh"
 
 cat >"$PATH_BIN/systemctl" <<'EOF'
 #!/usr/bin/env bash
-exit 1
+set -euo pipefail
+case "${1:-}" in
+  --user)
+    shift
+    ;;
+esac
+case "${1:-}" in
+  is-active)
+    exit 0
+    ;;
+  stop|daemon-reload)
+    exit 0
+    ;;
+  start)
+    exec "$PATH_BIN/prove-lock-release"
+    ;;
+  show-environment)
+    exit 0
+    ;;
+  *)
+    exit 1
+    ;;
+esac
 EOF
 chmod +x "$PATH_BIN/systemctl"
+
+cat >"$PATH_BIN/prove-lock-release" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+# systemctl start must be able to reacquire the same lifecycle lock. The
+# upgrade process has already completed its filesystem transaction and must
+# release the lock before handing control back to systemd.
+source "$TREE/lib/state.sh"
+timeout 2s bash -c 'source "$1"; state_lifecycle_lock_acquire; state_lifecycle_lock_release' _ "$TREE/lib/state.sh"
+EOF
+chmod +x "$PATH_BIN/prove-lock-release"
 
 export HOME="$HOME_DIR"
 export XDG_CONFIG_HOME="$CONFIG_HOME"
@@ -79,6 +112,7 @@ export PA_STATE_DIR="$STATE"
 export PREFIX="$PREFIX"
 export BIN="$BIN"
 export TREE_INSTALL_SENTINEL="$TMP/install-critical"
+export TREE="$TREE"
 export PATH="$PATH_BIN:$PATH"
 mkdir -p "$XDG_RUNTIME_DIR"
 
