@@ -57,21 +57,21 @@ assert_blocked() {
   fi
 }
 
-"$TMP/bin/proxy-ctl" run >"$TMP/run.log" 2>&1 & run_pid=$!
+setsid "$TMP/bin/proxy-ctl" run >"$TMP/run.log" 2>&1 & run_pid=$!
 sleep 0.15
 [[ -f "$STATE/.lifecycle.lock" ]] || { echo 'run did not create lifecycle lock' >&2; exit 1; }
 assert_blocked plain-start start
-kill -KILL "$run_pid" 2>/dev/null || true
+kill -KILL -- "-$run_pid" 2>/dev/null || true
 wait "$run_pid" 2>/dev/null || true
 "$TMP/bin/proxy-ctl" start >/dev/null
 "$TMP/bin/proxy-ctl" restart >/dev/null
 "$TMP/bin/proxy-ctl" stop >/dev/null
 
-"$TMP/bin/proxy-ctl" --profile demo run >"$TMP/profile-run.log" 2>&1 & profile_run_pid=$!
+setsid "$TMP/bin/proxy-ctl" --profile demo run >"$TMP/profile-run.log" 2>&1 & profile_run_pid=$!
 sleep 0.15
 [[ -f "$STATE/.lifecycle.lock" ]] || { echo 'profile run did not use explicit runtime lifecycle lock' >&2; exit 1; }
 assert_blocked profile-stop '--profile demo stop'
-kill -KILL "$profile_run_pid" 2>/dev/null || true
+kill -KILL -- "-$profile_run_pid" 2>/dev/null || true
 wait "$profile_run_pid" 2>/dev/null || true
 "$TMP/bin/proxy-ctl" --profile demo stop >/dev/null
 
