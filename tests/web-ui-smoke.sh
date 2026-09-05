@@ -22,6 +22,14 @@ if python3 "$GATEWAY" --listen 0.0.0.0 --port "$PORT" --admin-token-file "$TOKEN
 fi
 grep -q 'non-loopback management listener requires' "$LOG" || { cat "$LOG" >&2; exit 1; }
 
+printf '%s\n' 'placeholder' >"$TMP/tls.crt"
+printf '%s\n' 'placeholder' >"$TMP/tls.key"
+if python3 "$GATEWAY" --listen 0.0.0.0 --port "$PORT" --admin-token-file "$TOKEN_FILE" --tls-cert "$TMP/tls.crt" --tls-key "$TMP/tls.key" >"$LOG" 2>&1; then
+  echo "expected non-loopback listener without explicit ACL to fail" >&2
+  exit 1
+fi
+grep -q 'requires at least one --allow-cidr' "$LOG" || { cat "$LOG" >&2; exit 1; }
+
 if python3 "$GATEWAY" --listen 127.0.0.1 --port "$PORT" --admin-token-file "$TOKEN_FILE" --allow-cidr 'not-a-cidr' >"$LOG" 2>&1; then
   echo "expected invalid management ACL CIDR to fail" >&2
   exit 1
