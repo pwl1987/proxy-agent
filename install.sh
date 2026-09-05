@@ -45,6 +45,7 @@ if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload
   systemctl enable proxy-agent.service >/dev/null
   systemctl enable proxy-agent-api.service >/dev/null
+  systemctl enable proxy-agent-health.timer >/dev/null
 fi
 
 echo "Installed proxy-agent to $PREFIX"
@@ -56,6 +57,6 @@ echo "Control API: proxy-agent-api.service (/run/proxy-agent/control.sock, local
 echo "Profile service: proxy-agent@<name>.service"
 echo "Next: provision an SSH key readable by $SERVICE_USER, edit the config, then run: proxy-ctl validate && proxy-ctl doctor && systemctl start proxy-agent"
 echo "TUI: proxy-ctl tui"
-echo "Optional health loop: systemctl enable --now proxy-agent-health.timer"
+echo "Default health loop: proxy-agent-health.timer (2min interval)"
 echo "Profile health: systemctl enable --now proxy-agent-health@<name>.timer"
 echo "Optional desired-state projection loop: systemctl enable --now proxy-agent-reconcile.timer"

@@ -1,0 +1,1 @@
+Real backend results are only recorded as PASS when the dedicated real-backend workflow is actually dispatched and succeeds. A skipped job is not release evidence.

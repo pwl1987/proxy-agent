@@ -2,21 +2,36 @@
 set -euo pipefail
 
 SCRIPT_PATH="${BASH_SOURCE[0]}"
-if command -v readlink >/dev/null 2>&1; then
-  SCRIPT_PATH="$(readlink -f -- "$SCRIPT_PATH")"
-fi
+if command -v readlink >/dev/null 2>&1; then SCRIPT_PATH="$(readlink -f -- "$SCRIPT_PATH")"; fi
 ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 source "$ROOT/lib/common.sh"
 PROFILE_NAME="${PA_PROFILE:-}"
 if [[ "${1:-}" == "--profile" ]]; then
   [[ -n "${2:-}" ]] || { echo '用法: proxy-agent-tui [--profile 名称]' >&2; exit 2; }
-  PROFILE_NAME="$2"
-  shift 2
+  PROFILE_NAME="$2"; shift 2
 fi
 [[ $# -eq 0 ]] || { echo '用法: proxy-agent-tui [--profile 名称]' >&2; exit 2; }
-
 [[ -t 0 && -t 1 ]] || { echo '错误：proxy-agent-tui 需要交互式终端' >&2; exit 1; }
 command -v tput >/dev/null 2>&1 || { echo '错误：proxy-agent-tui 需要 tput' >&2; exit 1; }
+command -v curl >/dev/null 2>&1 || { echo '错误：proxy-agent-tui 需要 curl' >&2; exit 1; }
+
+API_SOCKET="${PA_API_SOCKET:-/run/proxy-agent/control.sock}"
+CLI=("$ROOT/bin/proxy-ctl")
+
+api_get() {
+  local path="$1"
+  if [[ -n "$PROFILE_NAME" ]]; then
+    curl --silent --show-error --fail --unix-socket "$API_SOCKET" --get --data-urlencode "profile=$PROFILE_NAME" "http://localhost$path"
+  else
+    curl --silent --show-error --fail --unix-socket "$API_SOCKET" "http://localhost$path"
+  fi
+}
+
+api_runtime() {
+  local action="$1" body='{}'
+  [[ -n "$PROFILE_NAME" ]] && body="$(printf '{"profile":"%s"}' "$PROFILE_NAME")"
+  curl --silent --show-error --fail --unix-socket "$API_SOCKET" -H 'Content-Type: application/json' -X POST --data "$body" "http://localhost/api/v1/runtime/$action"
+}
 
 build_cli() {
   CLI=("$ROOT/bin/proxy-ctl")
@@ -24,33 +39,15 @@ build_cli() {
 }
 build_cli
 
-state_dir() {
-  local base
-  if [[ -n "${PA_STATE_DIR+x}" ]]; then
-    base="$PA_STATE_DIR"
-  elif (( EUID == 0 )); then
-    base=/run/proxy-agent
-  else
-    base="${XDG_RUNTIME_DIR:-$HOME/.cache/proxy-agent}/run"
-  fi
-  [[ -n "$PROFILE_NAME" ]] && printf '%s/%s' "$base" "$PROFILE_NAME" || printf '%s' "$base"
-}
-
 cols() { tput cols 2>/dev/null || printf '80'; }
 cleanup() { tput cnorm 2>/dev/null || true; tput sgr0 2>/dev/null || true; tput rmcup 2>/dev/null || true; printf '\n'; }
 trap cleanup EXIT INT TERM
-
 tput smcup
 tput civis
 
 action_label() {
   case "$1" in
-    start) printf '启动' ;;
-    stop) printf '停止' ;;
-    restart) printf '重启' ;;
-    test) printf '连通性测试' ;;
-    diagnose) printf '诊断' ;;
-    *) printf '%s' "$1" ;;
+    start) printf '启动' ;; stop) printf '停止' ;; restart) printf '重启' ;; test) printf '连通性测试' ;; diagnose) printf '诊断' ;; *) printf '%s' "$1" ;;
   esac
 }
 
@@ -58,19 +55,37 @@ run_action() {
   local action="$1"
   tput cup 0 0; tput ed
   printf 'proxy-agent 操作：%s%s\n\n' "$(action_label "$action")" "${PROFILE_NAME:+（配置档案：$PROFILE_NAME）}"
-  if "${CLI[@]}" "$action"; then
-    printf '\n操作完成。按任意键返回。\n'
+  if output="$(api_runtime "$action" 2>&1)"; then
+    printf '%s\n\n操作完成。按任意键返回。\n' "$output"
   else
-    printf '\n操作失败。按任意键返回。\n'
+    printf '%s\n\n操作失败。按任意键返回。\n' "$output"
   fi
   read -rsn1
 }
 
 health_summary() {
-  local dir state='未知'
-  dir="$(state_dir)"
-  if [[ -f "$dir/recovered" ]]; then state='已恢复'; elif [[ -f "$dir/healthy" ]]; then state='正常'; elif [[ -f "$dir/unhealthy" ]]; then state='异常'; fi
-  printf '%s' "$state"
+  local raw
+  if raw="$(api_get /api/v1/health 2>/dev/null)"; then
+    python3 -c 'import json,sys; d=json.load(sys.stdin)["data"]; print({"ready":"正常","not_ready":"未就绪"}.get(d.get("readiness"), d.get("status","未知")))' <<<"$raw"
+  else
+    printf 'API不可用'
+  fi
+}
+
+status_summary() {
+  local raw
+  raw="$(api_get /api/v1/status 2>/dev/null)" || { printf 'proxy-agent 状态不可用'; return; }
+  python3 -c '
+import json,sys
+d=json.load(sys.stdin)["data"]
+print("proxy-agent")
+print("  backend: " + ("listening" if d.get("backend_status") == "listening" else "not listening"))
+print("  HTTP:     " + ("listening" if d.get("http_status") == "listening" else ("disabled" if d.get("http_status") == "disabled" else "not listening")))
+print("  endpoint: " + str(d.get("endpoint","unknown")))
+print("  profile: " + str(d.get("profile", "default")))
+print("  desired revision: " + str(d.get("desired_revision", 0)))
+print("  observed revision: " + str(d.get("control",{}).get("observed_revision", 0)))
+' <<<"$raw"
 }
 
 translate_status_line() {
@@ -83,9 +98,9 @@ translate_status_line() {
     '  HTTP:     not listening') printf '  HTTP状态:  未监听' ;;
     '  HTTP:     disabled') printf '  HTTP状态:  已禁用' ;;
     '  endpoint: '*) printf '  endpoint:  %s' "${line#'  endpoint: '}" ;;
-    '  remote: '*) printf '  远端:      %s' "${line#'  remote: '}" ;;
     '  profile: '*) printf '  配置档案:  %s' "${line#'  profile: '}" ;;
-    '  backend: '*) printf '  后端:      %s' "${line#'  backend: '}" ;;
+    '  desired revision: '*) printf '  期望版本:  %s' "${line#'  desired revision: '}" ;;
+    '  observed revision: '*) printf '  实际版本:  %s' "${line#'  observed revision: '}" ;;
     *) printf '%s' "$line" ;;
   esac
 }
@@ -93,8 +108,7 @@ translate_status_line() {
 render() {
   local width now status health route_info profile_label line
   width="$(cols)"; now="$(date '+%Y-%m-%d %H:%M:%S')"
-  status="$("${CLI[@]}" status 2>/dev/null || printf 'proxy-agent 状态不可用')"
-  health="$(health_summary)"; route_info="$("${CLI[@]}" route github.com 2>/dev/null || printf '未知')"
+  status="$(status_summary)"; health="$(health_summary)"; route_info="$("${CLI[@]}" route github.com 2>/dev/null || printf '未知')"
   profile_label="${PROFILE_NAME:-默认}"
   tput cup 0 0; tput ed
   printf '╭%*s╮\n' "$((width-2))" '' | tr ' ' '─'
@@ -103,10 +117,7 @@ render() {
   printf '│  时间: %s%-*s│\n' "$now" "$((width-28))" ''
   printf '├%*s┤\n' "$((width-2))" '' | tr ' ' '─'
   printf '│ %-*s│\n' "$((width-2))" '运行状态'
-  while IFS= read -r line; do
-    translate_status_line "$line"
-    printf '\n'
-  done <<< "$status"
+  while IFS= read -r line; do translate_status_line "$line"; printf '\n'; done <<< "$status"
   printf '│ %-*s│\n' "$((width-2))" "健康状态: $health"
   printf '│ %-*s│\n' "$((width-2))" "分流结果: $route_info"
   printf '├%*s┤\n' "$((width-2))" '' | tr ' ' '─'
@@ -135,14 +146,8 @@ profile_select() {
   for item in "${profiles[@]}"; do [[ -n "$item" && "$item" != "$current" ]] && printf '%s\n' "$item"; done
   printf '\n输入配置档案名称（留空 = 默认）：'
   IFS= read -r choice
-  if [[ -z "$choice" || "$choice" == default ]]; then
-    PROFILE_NAME=''
-  else
-    if ! printf '%s\n' "${profiles[@]}" | grep -Fqx -- "$choice"; then
-      printf '\n未知配置档案。按任意键返回。'
-      read -rsn1
-      return
-    fi
+  if [[ -z "$choice" || "$choice" == default ]]; then PROFILE_NAME=''; else
+    if ! printf '%s\n' "${profiles[@]}" | grep -Fqx -- "$choice"; then printf '\n未知配置档案。按任意键返回。'; read -rsn1; return; fi
     PROFILE_NAME="$choice"
   fi
   build_cli
@@ -152,15 +157,7 @@ while true; do
   render
   IFS= read -rsn1 -t 2 key || key=''
   case "$key" in
-    s) run_action start ;;
-    x) run_action stop ;;
-    r) run_action restart ;;
-    t) run_action test ;;
-    d) run_action diagnose ;;
-    i) integration_view ;;
-    R) route_prompt ;;
-    p) profile_select ;;
-    q) exit 0 ;;
-    '') ;;
+    s) run_action start ;; x) run_action stop ;; r) run_action restart ;; t) run_action test ;; d) run_action diagnose ;;
+    i) integration_view ;; R) route_prompt ;; p) profile_select ;; q) exit 0 ;; '') ;;
   esac
 done

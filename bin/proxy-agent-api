@@ -5,14 +5,17 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import socketserver
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 from typing import Any
 
 API_VERSION = "v1"
@@ -21,7 +24,12 @@ PROXY_CTL = ROOT / "bin" / "proxy-ctl"
 RECONCILER = Path(os.environ.get("PA_RECONCILER", ROOT / "bin" / "proxy-agent-reconcile"))
 REVISION_STORE = ROOT / "lib" / "revision-store.sh"
 AUDIT_STORE = ROOT / "lib" / "audit-store.sh"
+COMMON = ROOT / "lib" / "common.sh"
+PROFILE = ROOT / "lib" / "profile.sh"
+PROFILE_CONTEXT = ROOT / "lib" / "profile-context.sh"
+TYPED_EXPORTER = ROOT / "lib" / "typed-legacy-export.py"
 MAX_BODY = 1024 * 1024
+PROFILE_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def json_bytes(payload: dict[str, Any]) -> bytes:
@@ -36,20 +44,44 @@ def error_envelope(code: str, message: str) -> dict[str, Any]:
     return {"api_version": API_VERSION, "error": {"code": code, "message": message}}
 
 
-def run_proxy_ctl(*args: str) -> tuple[int, bytes, bytes]:
-    p = subprocess.run([str(PROXY_CTL), *args], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+def profile_env(profile_name: str | None) -> dict[str, str]:
+    env = os.environ.copy()
+    if not profile_name:
+        return env
+    if not PROFILE_RE.fullmatch(profile_name):
+        raise ValueError("invalid profile name")
+    cmd = ["bash", "-c", 'source "$1"; source "$2"; source "$3"; profile_apply_context "$4"; printf "%s\\n%s\\n%s\\n%s\\n" "$PA_PROFILE" "$PA_CONFIG" "$PA_STATE_DIR" "$PA_LOG_DIR"', "_", str(COMMON), str(PROFILE), str(PROFILE_CONTEXT), profile_name]
+    p = subprocess.run(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False)
+    if p.returncode != 0:
+        raise ValueError(p.stderr.strip() or f"profile not found: {profile_name}")
+    values = p.stdout.splitlines()
+    if len(values) != 4:
+        raise RuntimeError("profile context returned invalid output")
+    env["PA_PROFILE"], env["PA_CONFIG"], env["PA_STATE_DIR"], env["PA_LOG_DIR"] = values
+    return env
+
+
+def run_proxy_ctl(profile_name: str | None, *args: str, config_path: str | None = None) -> tuple[int, bytes, bytes]:
+    env = profile_env(profile_name)
+    command = [str(PROXY_CTL)]
+    if profile_name and config_path is None:
+        command += ["--profile", profile_name]
+    if config_path is not None:
+        env["PA_CONFIG"] = config_path
+    command += list(args)
+    p = subprocess.run(command, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     return p.returncode, p.stdout, p.stderr
 
 
-def command_json(*args: str) -> Any:
-    rc, stdout, stderr = run_proxy_ctl(*args)
+def command_json(profile_name: str | None, *args: str, config_path: str | None = None) -> Any:
+    rc, stdout, stderr = run_proxy_ctl(profile_name, *args, config_path=config_path)
     if rc != 0:
         raise RuntimeError(stderr.decode("utf-8", errors="replace").strip() or "proxy-ctl failed")
     return json.loads(stdout.decode("utf-8"))
 
 
-def revision_call(function: str, *args: str) -> bytes:
-    env = os.environ.copy()
+def revision_call(profile_name: str | None, function: str, *args: str) -> bytes:
+    env = profile_env(profile_name)
     cmd = ["bash", "-c", 'source "$1"; shift; "$FUNC" "$@"', "_", str(REVISION_STORE), *args]
     env["FUNC"] = function
     p = subprocess.run(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
@@ -58,10 +90,19 @@ def revision_call(function: str, *args: str) -> bytes:
     return p.stdout
 
 
-def audit_call(event: dict[str, Any]) -> None:
+def revision_call_rc(profile_name: str | None, function: str, *args: str) -> tuple[int, bytes, bytes]:
+    env = profile_env(profile_name)
+    cmd = ["bash", "-c", 'source "$1"; shift; "$FUNC" "$@"', "_", str(REVISION_STORE), *args]
+    env["FUNC"] = function
+    p = subprocess.run(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    return p.returncode, p.stdout, p.stderr
+
+
+def audit_call(profile_name: str | None, event: dict[str, Any]) -> None:
+    env = profile_env(profile_name)
     text = json.dumps(event, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     cmd = ["bash", "-c", 'source "$1"; audit_append "$2"', "_", str(AUDIT_STORE), text]
-    p = subprocess.run(cmd, cwd=ROOT, env=os.environ.copy(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    p = subprocess.run(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     if p.returncode != 0:
         raise RuntimeError(p.stderr.decode("utf-8", errors="replace").strip() or "audit append failed")
 
@@ -70,8 +111,9 @@ def stderr_message(stderr: bytes) -> str:
     return stderr.decode("utf-8", errors="replace").strip()
 
 
-def reconcile(*args: str) -> dict[str, Any]:
-    p = subprocess.run([str(RECONCILER), *args], cwd=ROOT, env=os.environ.copy(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+def reconcile(profile_name: str | None, *args: str) -> dict[str, Any]:
+    env = profile_env(profile_name)
+    p = subprocess.run([str(RECONCILER), *args], cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     if p.returncode != 0:
         raise RuntimeError(stderr_message(p.stderr) or "reconcile failed")
     try:
@@ -80,15 +122,16 @@ def reconcile(*args: str) -> dict[str, Any]:
         raise RuntimeError(f"reconcile returned invalid JSON: {exc}") from exc
 
 
-def observed_state() -> dict[str, Any]:
-    state_dir = Path(os.environ.get("PA_STATE_DIR", "/run/proxy-agent"))
+def observed_state(profile_name: str | None) -> dict[str, Any]:
+    env = profile_env(profile_name)
+    state_dir = Path(env.get("PA_STATE_DIR", "/run/proxy-agent"))
     path = state_dir / "runtime" / "reconcile-state.json"
     if not path.is_file():
-        return {"status": "unknown", "desired_revision": int(revision_call("revision_desired_revision")), "observed_revision": 0}
+        return {"status": "unknown", "desired_revision": int(revision_call(profile_name, "revision_desired_revision")), "observed_revision": 0}
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return {"status": "unknown", "desired_revision": int(revision_call("revision_desired_revision")), "observed_revision": 0}
+        return {"status": "unknown", "desired_revision": int(revision_call(profile_name, "revision_desired_revision")), "observed_revision": 0}
 
 
 class ConflictError(Exception):
@@ -103,9 +146,9 @@ class ActivationError(Exception):
     pass
 
 
-def safe_audit(event: dict[str, Any]) -> None:
+def safe_audit(profile_name: str | None, event: dict[str, Any]) -> None:
     try:
-        audit_call(event)
+        audit_call(profile_name, event)
     except Exception as exc:
         print(f"control-api: audit append failed: {exc}", file=sys.stderr)
 
@@ -138,54 +181,64 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
             raise ValueError("short request body")
         return json.loads(raw.decode("utf-8")) if raw else None
 
+    def _profile_from_path(self) -> str | None:
+        values = parse_qs(urlsplit(self.path).query, keep_blank_values=True).get("profile", [])
+        if not values or not values[0]:
+            return None
+        if not PROFILE_RE.fullmatch(values[0]):
+            raise ValueError("invalid profile name")
+        return values[0]
+
+    @staticmethod
+    def _profile_from_body(body: Any) -> str | None:
+        if not isinstance(body, dict) or body.get("profile") in (None, ""):
+            return None
+        name = str(body["profile"])
+        if not PROFILE_RE.fullmatch(name):
+            raise ValueError("invalid profile name")
+        return name
+
     def do_GET(self) -> None:
-        routes = {
-            "/api/v1/status": self._status,
-            "/api/v1/health": self._health,
-            "/api/v1/capabilities": self._capabilities,
-            "/api/v1/config": self._config,
-            "/api/v1/events": self._events,
-            "/api/v1/metrics": self._metrics,
-            "/api/v1/revisions": self._revisions,
-        }
-        handler = routes.get(self.path)
-        if handler is not None:
-            try:
-                handler()
-            except FileNotFoundError:
-                self._send(HTTPStatus.NOT_FOUND, error_envelope("not_found", "revision not found"))
-            except ValidationError as exc:
-                self._send(HTTPStatus.UNPROCESSABLE_ENTITY, error_envelope("invalid_config", str(exc)))
-            except Exception as exc:
-                self._send(HTTPStatus.INTERNAL_SERVER_ERROR, error_envelope("internal_error", str(exc)))
-            return
-        if self.path.startswith("/api/v1/revisions/"):
-            try:
-                self._revision_detail(self.path.rsplit("/", 1)[-1])
-            except ValueError as exc:
-                self._send(HTTPStatus.BAD_REQUEST, error_envelope("invalid_revision", str(exc)))
-            except FileNotFoundError:
-                self._send(HTTPStatus.NOT_FOUND, error_envelope("not_found", "revision not found"))
-            except Exception as exc:
-                self._send(HTTPStatus.INTERNAL_SERVER_ERROR, error_envelope("internal_error", str(exc)))
-            return
-        self._send(HTTPStatus.NOT_FOUND, error_envelope("not_found", "unknown endpoint"))
+        try:
+            profile = self._profile_from_path()
+            path = urlsplit(self.path).path
+            routes = {"/api/v1/status": self._status, "/api/v1/health": self._health, "/api/v1/capabilities": self._capabilities, "/api/v1/config": self._config, "/api/v1/events": self._events, "/api/v1/metrics": self._metrics, "/api/v1/revisions": self._revisions}
+            handler = routes.get(path)
+            if handler is not None:
+                handler(profile)
+                return
+            if path.startswith("/api/v1/revisions/"):
+                self._revision_detail(path.rsplit("/", 1)[-1], profile)
+                return
+            self._send(HTTPStatus.NOT_FOUND, error_envelope("not_found", "unknown endpoint"))
+        except FileNotFoundError:
+            self._send(HTTPStatus.NOT_FOUND, error_envelope("not_found", "revision not found"))
+        except ValidationError as exc:
+            self._send(HTTPStatus.UNPROCESSABLE_ENTITY, error_envelope("invalid_config", str(exc)))
+        except ValueError as exc:
+            self._send(HTTPStatus.BAD_REQUEST, error_envelope("invalid_request", str(exc)))
+        except Exception as exc:
+            self._send(HTTPStatus.INTERNAL_SERVER_ERROR, error_envelope("internal_error", str(exc)))
 
     def do_POST(self) -> None:
-        if self.path not in {"/api/v1/validate", "/api/v1/revisions", "/api/v1/apply", "/api/v1/rollback"}:
+        path = urlsplit(self.path).path
+        if path not in {"/api/v1/validate", "/api/v1/revisions", "/api/v1/apply", "/api/v1/rollback", "/api/v1/runtime/start", "/api/v1/runtime/stop", "/api/v1/runtime/restart", "/api/v1/runtime/test", "/api/v1/runtime/diagnose"}:
             self._send(HTTPStatus.NOT_FOUND, error_envelope("not_found", "unknown endpoint"))
             return
         try:
             body = self._read_json_body()
-            if self.path == "/api/v1/validate":
-                self._validate(body)
+            profile = self._profile_from_body(body)
+            if path == "/api/v1/validate":
+                self._validate(body, profile)
                 self._send(HTTPStatus.OK, response_envelope("validation", {"valid": True}))
-            elif self.path == "/api/v1/revisions":
-                self._create_revision(body)
-            elif self.path == "/api/v1/apply":
-                self._apply(body)
+            elif path == "/api/v1/revisions":
+                self._create_revision(body, profile)
+            elif path == "/api/v1/apply":
+                self._apply(body, profile)
+            elif path == "/api/v1/rollback":
+                self._rollback(body, profile)
             else:
-                self._rollback(body)
+                self._runtime(path.rsplit("/", 1)[-1], profile)
         except json.JSONDecodeError as exc:
             self._send(HTTPStatus.BAD_REQUEST, error_envelope("invalid_json", str(exc)))
         except ValidationError as exc:
@@ -201,33 +254,63 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         except Exception as exc:
             self._send(HTTPStatus.INTERNAL_SERVER_ERROR, error_envelope("internal_error", str(exc)))
 
-    def _status(self) -> None:
-        data = command_json("status", "--json")
-        data["control"] = observed_state()
-        data["desired_revision"] = int(revision_call("revision_desired_revision"))
-        data["current_revision"] = int(revision_call("revision_current"))
+    def _status(self, profile: str | None) -> None:
+        observed = observed_state(profile)
+        runtime_config = observed.get("runtime_config") if isinstance(observed, dict) else None
+        data = command_json(profile, "status", "--json", config_path=runtime_config if runtime_config else None)
+        data["control"] = observed
+        data["desired_revision"] = int(revision_call(profile, "revision_desired_revision"))
+        data["current_revision"] = int(revision_call(profile, "revision_current"))
         self._send(HTTPStatus.OK, response_envelope("status", data))
 
-    def _health(self) -> None:
-        self._send(HTTPStatus.OK, response_envelope("health", {"status": "ok", "transport": "ready"}))
+    def _health(self, profile: str | None) -> None:
+        observed = observed_state(profile)
+        runtime_config = observed.get("runtime_config") if isinstance(observed, dict) else None
+        runtime = command_json(profile, "status", "--json=v2", config_path=runtime_config if runtime_config else None)
+        backend = runtime.get("backend", {}) if isinstance(runtime, dict) else {}
+        adapter = runtime.get("adapter", {}) if isinstance(runtime, dict) else {}
+        backend_ready = backend.get("status") == "ready"
+        http_enabled = adapter.get("enabled") is True
+        adapter_ready = (not http_enabled) or adapter.get("status") == "ready"
+        desired_revision = int(revision_call(profile, "revision_desired_revision"))
+        observed_revision = int(observed.get("observed_revision", 0))
+        revision_ready = desired_revision == observed_revision
+        readiness = "ready" if backend_ready and adapter_ready and revision_ready else "not_ready"
+        status = "ok" if readiness == "ready" else "degraded"
+        self._send(HTTPStatus.OK, response_envelope("health", {"status": status, "transport": "ready", "readiness": readiness, "runtime": {"backend": backend.get("status", "unknown"), "adapter": adapter.get("status", "disabled") if http_enabled else "disabled"}, "desired_revision": desired_revision, "observed_revision": observed_revision}))
 
-    def _capabilities(self) -> None:
-        status = command_json("status", "--json")
-        rc, stdout, stderr = run_proxy_ctl("capabilities")
+    def _runtime(self, action: str, profile: str | None) -> None:
+        if action not in {"start", "stop", "restart", "test", "diagnose"}:
+            raise ValueError("unsupported runtime action")
+        rc, stdout, stderr = run_proxy_ctl(profile, action)
+        if rc != 0:
+            raise ActivationError(stderr_message(stderr) or f"runtime {action} failed")
+        text = stdout.decode("utf-8", errors="replace").strip()
+        try:
+            result: Any = json.loads(text) if text else {"ok": True}
+        except json.JSONDecodeError:
+            result = {"ok": True, "output": text}
+        safe_audit(profile, {"schema_version": 1, "event": f"runtime.{action}", "actor": "local-api", "timestamp": int(time.time()), "status": "succeeded"})
+        self._send(HTTPStatus.OK, response_envelope("runtime", {"action": action, "result": result}))
+
+    def _capabilities(self, profile: str | None) -> None:
+        status = command_json(profile, "status", "--json")
+        rc, stdout, stderr = run_proxy_ctl(profile, "capabilities")
         if rc != 0:
             raise RuntimeError(stderr_message(stderr) or "capabilities failed")
         caps = [x for x in stdout.decode("utf-8", errors="replace").splitlines() if x]
         self._send(HTTPStatus.OK, response_envelope("capabilities", {"backend": status.get("backend", "unknown"), "capabilities": caps}))
 
-    def _config(self) -> None:
-        self._send(HTTPStatus.OK, response_envelope("config", command_json("config", "export-typed")))
+    def _config(self, profile: str | None) -> None:
+        self._send(HTTPStatus.OK, response_envelope("config", command_json(profile, "config", "export-typed")))
 
-    def _events(self) -> None:
-        raw = subprocess.run(["bash", "-c", 'source "$1"; audit_list', "_", str(AUDIT_STORE)], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False).stdout
+    def _events(self, profile: str | None) -> None:
+        env = profile_env(profile)
+        raw = subprocess.run(["bash", "-c", 'source "$1"; audit_list', "_", str(AUDIT_STORE)], cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False).stdout
         events = [json.loads(line) for line in raw.decode("utf-8").splitlines() if line]
         self._send(HTTPStatus.OK, response_envelope("events", events[-100:]))
 
-    def _metrics(self) -> None:
+    def _metrics(self, profile: str | None) -> None:
         body = b"# HELP proxy_agent_control_api_up Local Control API transport availability\nproxy_agent_control_api_up 1\n"
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
@@ -236,91 +319,119 @@ class ControlRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _revisions(self) -> None:
-        names = revision_call("revision_list").decode("utf-8").splitlines()
+    def _revisions(self, profile: str | None) -> None:
+        names = revision_call(profile, "revision_list").decode("utf-8").splitlines()
         revisions = [int(name[:-5]) for name in names if name.endswith(".json") and name[:-5].isdigit()]
-        self._send(HTTPStatus.OK, response_envelope("revisions", {"current": int(revision_call("revision_current")), "desired": int(revision_call("revision_desired_revision")), "revisions": revisions}))
+        self._send(HTTPStatus.OK, response_envelope("revisions", {"current": int(revision_call(profile, "revision_current")), "desired": int(revision_call(profile, "revision_desired_revision")), "revisions": revisions}))
 
-    def _revision_detail(self, revision_id: str) -> None:
+    def _revision_detail(self, revision_id: str, profile: str | None) -> None:
         if not revision_id.isdigit():
             raise ValueError("revision must be an unsigned integer")
-        raw = revision_call("revision_get", revision_id)
-        self._send(HTTPStatus.OK, response_envelope("revision", json.loads(raw)))
+        self._send(HTTPStatus.OK, response_envelope("revision", json.loads(revision_call(profile, "revision_get", revision_id))))
 
     @staticmethod
-    def _validate(body: Any) -> None:
+    def _validate(body: Any, profile: str | None) -> None:
         if not isinstance(body, dict) or not isinstance(body.get("config"), dict):
             raise ValidationError("body.config must be an object")
-        cfg = body["config"]
-        required = {"schema_version", "backend", "listeners", "health", "integrations", "routing", "security"}
-        missing = sorted(required - cfg.keys())
-        if missing:
-            raise ValidationError(f"missing required config fields: {', '.join(missing)}")
-        if cfg["schema_version"] != 1:
-            raise ValidationError("schema_version must be 1")
-        if not isinstance(cfg["backend"], dict) or not cfg["backend"].get("type"):
-            raise ValidationError("backend.type is required")
-        if not isinstance(cfg["security"], dict):
-            raise ValidationError("security must be an object")
-        if cfg["security"].get("allow_public_listener") is True:
-            raise ValidationError("public listener policy requires an explicit authenticated deployment boundary")
+        config_json = json.dumps(body["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        exported = subprocess.run(
+            [sys.executable, str(TYPED_EXPORTER)],
+            input=config_json,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=ROOT,
+            check=False,
+        )
+        if exported.returncode != 0:
+            raise ValidationError(stderr_message(exported.stderr.encode("utf-8")) or "typed configuration validation failed")
 
-    def _create_revision(self, body: Any) -> None:
-        self._validate(body)
+        tmp_path: str | None = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", prefix="proxy-agent-api-validate-", suffix=".conf", delete=False) as tmp:
+                os.chmod(tmp.name, 0o600)
+                tmp.write(exported.stdout)
+                tmp_path = tmp.name
+            rc, _, stderr = run_proxy_ctl(profile, "validate", config_path=tmp_path)
+            if rc != 0:
+                raise ValidationError(stderr_message(stderr) or "runtime configuration validation failed")
+        finally:
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except FileNotFoundError:
+                    pass
+
+    def _create_revision(self, body: Any, profile: str | None) -> None:
+        self._validate(body, profile)
         expected = body.get("if_match_revision")
-        current = int(revision_call("revision_current"))
-        if expected is not None and int(expected) != current:
-            raise ConflictError(f"expected revision {expected}, current revision is {current}")
         cfg = json.dumps(body["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True)
         actor = str(body.get("actor") or "local-api")
         summary = str(body.get("change_summary") or "configuration change")
-        rid = int(revision_call("revision_record", cfg, actor, summary, "passed", "pending"))
-        safe_audit({"schema_version": 1, "event": "revision.created", "revision": rid, "actor": actor, "timestamp": int(time.time()), "change_summary": summary})
-        self._send(HTTPStatus.CREATED, response_envelope("revision", json.loads(revision_call("revision_get", str(rid)))))
+        if expected is None:
+            rid = int(revision_call(profile, "revision_record", cfg, actor, summary, "passed", "pending"))
+        else:
+            rc, stdout, stderr = revision_call_rc(profile, "revision_record_if_match", str(expected), cfg, actor, summary, "passed", "pending")
+            if rc == 3:
+                raise ConflictError(stderr_message(stderr) or "revision head conflict")
+            if rc != 0:
+                raise RuntimeError(stderr_message(stderr) or "revision creation failed")
+            rid = int(stdout)
+        safe_audit(profile, {"schema_version": 1, "event": "revision.created", "revision": rid, "actor": actor, "timestamp": int(time.time()), "change_summary": summary})
+        self._send(HTTPStatus.CREATED, response_envelope("revision", json.loads(revision_call(profile, "revision_get", str(rid)))))
 
-    def _apply(self, body: Any) -> None:
+    def _apply(self, body: Any, profile: str | None) -> None:
         revision = int(body.get("revision", 0)) if isinstance(body, dict) else 0
         expected = body.get("if_match_revision") if isinstance(body, dict) else None
-        current = int(revision_call("revision_current"))
         if revision <= 0:
             raise ValueError("revision is required")
-        if expected is not None and int(expected) != current:
-            raise ConflictError(f"expected revision {expected}, current revision is {current}")
-        raw = revision_call("revision_get", str(revision))
-        obj = json.loads(raw)
-        revision_call("revision_set_desired", str(revision), json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+        obj = json.loads(revision_call(profile, "revision_get", str(revision)))
+        cfg = json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        if expected is None:
+            revision_call(profile, "revision_set_desired", str(revision), cfg)
+        else:
+            rc, _, stderr = revision_call_rc(profile, "revision_set_desired_if_match", str(expected), str(revision), cfg)
+            if rc == 3:
+                raise ConflictError(stderr_message(stderr) or "revision head conflict")
+            if rc != 0:
+                raise RuntimeError(stderr_message(stderr) or "desired-state update failed")
         actor = str(body.get("actor") or "local-api")
         try:
-            result = reconcile("--activate")
+            result = reconcile(profile, "--activate", "--revision", str(revision))
         except Exception as exc:
             message = str(exc)
-            safe_audit({"schema_version": 1, "event": "desired_state.activation_failed", "revision": revision, "actor": actor, "timestamp": int(time.time()), "status": "failed", "error": message})
+            safe_audit(profile, {"schema_version": 1, "event": "desired_state.activation_failed", "revision": revision, "actor": actor, "timestamp": int(time.time()), "status": "failed", "error": message})
             raise ActivationError(message) from exc
-        safe_audit({"schema_version": 1, "event": "desired_state.activated", "revision": revision, "actor": actor, "timestamp": int(time.time()), "status": result.get("status")})
-        self._send(HTTPStatus.ACCEPTED, response_envelope("apply", {"revision": revision, "desired_revision": int(revision_call("revision_desired_revision")), "reconcile": result}))
+        safe_audit(profile, {"schema_version": 1, "event": "desired_state.activated", "revision": revision, "actor": actor, "timestamp": int(time.time()), "status": result.get("status")})
+        self._send(HTTPStatus.ACCEPTED, response_envelope("apply", {"revision": revision, "desired_revision": int(revision_call(profile, "revision_desired_revision")), "reconcile": result}))
 
-    def _rollback(self, body: Any) -> None:
+    def _rollback(self, body: Any, profile: str | None) -> None:
         if not isinstance(body, dict) or not body.get("revision"):
             raise ValueError("revision is required")
         target = int(body["revision"])
-        current = int(revision_call("revision_current"))
         expected = body.get("if_match_revision")
-        if expected is not None and int(expected) != current:
-            raise ConflictError(f"expected revision {expected}, current revision is {current}")
-        raw = revision_call("revision_get", str(target))
-        obj = json.loads(raw)
         actor = str(body.get("actor") or "local-api")
         summary = f"rollback to revision {target}"
-        rid = int(revision_call("revision_record", json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True), actor, summary, "passed", "pending"))
-        revision_call("revision_set_desired", str(rid), json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+        if expected is None:
+            obj = json.loads(revision_call(profile, "revision_get", str(target)))
+            cfg = json.dumps(obj["config"], ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+            rid = int(revision_call(profile, "revision_record", cfg, actor, summary, "passed", "pending"))
+            revision_call(profile, "revision_set_desired", str(rid), cfg)
+        else:
+            rc, stdout, stderr = revision_call_rc(profile, "revision_rollback_if_match", str(expected), str(target), actor, summary)
+            if rc == 3:
+                raise ConflictError(stderr_message(stderr) or "revision head conflict")
+            if rc != 0:
+                raise RuntimeError(stderr_message(stderr) or "rollback revision creation failed")
+            rid = int(stdout)
         try:
-            result = reconcile("--activate")
+            result = reconcile(profile, "--activate", "--revision", str(rid))
         except Exception as exc:
             message = str(exc)
-            safe_audit({"schema_version": 1, "event": "rollback.activation_failed", "revision": rid, "target_revision": target, "actor": actor, "timestamp": int(time.time()), "status": "failed", "error": message})
+            safe_audit(profile, {"schema_version": 1, "event": "rollback.activation_failed", "revision": rid, "target_revision": target, "actor": actor, "timestamp": int(time.time()), "status": "failed", "error": message})
             raise ActivationError(message) from exc
-        safe_audit({"schema_version": 1, "event": "rollback.activated", "revision": rid, "target_revision": target, "actor": actor, "timestamp": int(time.time()), "status": result.get("status")})
-        self._send(HTTPStatus.ACCEPTED, response_envelope("rollback", {"revision": rid, "target_revision": target, "desired_revision": int(revision_call("revision_desired_revision")), "reconcile": result}))
+        safe_audit(profile, {"schema_version": 1, "event": "rollback.activated", "revision": rid, "target_revision": target, "actor": actor, "timestamp": int(time.time()), "status": result.get("status")})
+        self._send(HTTPStatus.ACCEPTED, response_envelope("rollback", {"revision": rid, "target_revision": target, "desired_revision": int(revision_call(profile, "revision_desired_revision")), "reconcile": result}))
 
 
 class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
@@ -329,42 +440,31 @@ class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="proxy-agent local Control API v1")
+    parser = argparse.ArgumentParser(description="local Control API v1")
     parser.add_argument("--socket", default=os.environ.get("PA_API_SOCKET", "/run/proxy-agent/control.sock"))
     return parser.parse_args()
-
-
-def prepare_socket(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        mode = path.stat().st_mode
-    except FileNotFoundError:
-        mode = None
-    if mode is not None:
-        if not stat.S_ISSOCK(mode):
-            raise RuntimeError(f"refusing to replace non-socket path: {path}")
-        path.unlink()
 
 
 def main() -> int:
     args = parse_args()
     socket_path = Path(args.socket)
-    if not socket_path.is_absolute():
-        print("socket path must be absolute", file=sys.stderr)
-        return 2
-    prepare_socket(socket_path)
+    socket_path.parent.mkdir(parents=True, exist_ok=True)
+    if socket_path.exists():
+        if not stat.S_ISSOCK(socket_path.stat().st_mode):
+            print(f"refusing to replace non-socket path: {socket_path}", file=sys.stderr)
+            return 2
+        socket_path.unlink()
     server = UnixHTTPServer(str(socket_path), ControlRequestHandler)
     os.chmod(socket_path, 0o600)
+    print(f"control-api listening on {socket_path}", file=sys.stderr)
     try:
-        print(f"proxy-agent control API v1 listening on {socket_path}", file=sys.stderr)
         server.serve_forever()
     except KeyboardInterrupt:
-        return 0
+        pass
     finally:
         server.server_close()
         try:
-            if socket_path.exists() and stat.S_ISSOCK(socket_path.stat().st_mode):
-                socket_path.unlink()
+            socket_path.unlink()
         except FileNotFoundError:
             pass
     return 0

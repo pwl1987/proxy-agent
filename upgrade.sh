@@ -15,11 +15,20 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 was_active=false
 if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet "$SERVICE_NAME"; then
   was_active=true
+  systemctl stop "$SERVICE_NAME"
 fi
+
+# Share the lifecycle lock with proxy-ctl/reconciler for the default system profile.
+PA_STATE_DIR="${PA_STATE_DIR:-/run/proxy-agent}"
+# shellcheck disable=SC1091
+source "$ROOT/lib/state.sh"
+state_lifecycle_lock_acquire
+release_lifecycle_lock() { state_lifecycle_lock_release; }
+cleanup_lifecycle() { release_lifecycle_lock; cleanup_backup; }
 
 backup_root="$(mktemp -d /tmp/proxy-agent-upgrade.XXXXXX)"
 cleanup_backup() { rm -rf -- "$backup_root"; }
-trap cleanup_backup EXIT
+trap cleanup_lifecycle EXIT
 
 backup_tree() {
   local source="$1" target="$2"
@@ -76,10 +85,6 @@ restore_previous() {
   printf '已恢复上一版本的程序、配置、Profile 和 systemd 单元；请检查升级日志后再重试。\n' >&2
 }
 
-if $was_active; then
-  systemctl stop "$SERVICE_NAME"
-fi
-
 set +e
 PREFIX="$PREFIX" ETC="$ETC" SERVICE_USER="$SERVICE_USER" SERVICE_GROUP="${SERVICE_GROUP:-proxy-agent}" bash "$ROOT/install.sh"
 install_rc=$?
@@ -99,7 +104,10 @@ fi
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload
   if $was_active; then
-    systemctl start "$SERVICE_NAME"
+    if ! systemctl start "$SERVICE_NAME"; then
+      warn "升级文件与配置已验证，但服务恢复启动失败：$SERVICE_NAME"
+      exit 1
+    fi
   fi
 fi
 

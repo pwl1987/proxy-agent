@@ -5,7 +5,7 @@
 ## 1. 构建
 
 ```bash
-docker build -f Containerfile -t proxy-agent:0.2.0 .
+docker build -f Containerfile -t proxy-agent:0.4.0 .
 ```
 
 镜像默认使用非 root 的 `proxy-agent` 服务账户运行。
@@ -18,7 +18,7 @@ docker build -f Containerfile -t proxy-agent:0.2.0 .
 docker run --rm \
   -p 127.0.0.1:1080:1080 \
   -v "$PWD/proxy-agent.conf:/etc/proxy-agent/proxy-agent.conf:ro" \
-  proxy-agent:0.2.0
+  proxy-agent:0.4.0
 ```
 
 配置文件应保持最小权限；SSH backend 使用的私钥建议以只读方式挂载到服务用户可读取的位置。

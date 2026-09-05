@@ -81,6 +81,7 @@ last_rc=1
 while (( attempt <= retries + 1 )); do
   if health_check; then
     health_mark healthy
+    health_recovery_reset
     sync_runtime_state
     log "health OK: liveness=ready network=$([[ -n "${HEALTH_TARGETS:-}" ]] && echo checked || echo skipped)"
     exit 0
@@ -98,17 +99,22 @@ sync_runtime_state
 warn "health check failed after $((retries + 1)) attempt(s), rc=$last_rc"
 
 if [[ "${HEALTH_AUTO_RECOVER:-true}" == true && "$last_rc" -eq 10 ]]; then
+  if ! health_recovery_allowed; then
+    warn 'automatic backend recovery suppressed by recovery budget/cooldown'
+    exit 1
+  fi
   warn 'backend liveness failed; attempting automatic recovery'
   if restart_agent; then
     if health_check; then
       health_mark recovered
+      health_recovery_reset
       sync_runtime_state
       log 'automatic backend recovery succeeded'
       exit 0
     fi
   fi
   sync_runtime_state
-  warn 'automatic backend recovery failed'
+  warn 'automatic backend recovery failed; retry budget retained'
 fi
 
 exit 1
