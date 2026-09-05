@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hmac
 import ipaddress
+import json
 import os
 import secrets
 import socket
@@ -113,7 +114,7 @@ class SessionStore:
             record = self._sessions.get(session_id)
             if record is None:
                 return None
-            csrf, expires_at = record
+            csrf, _ = record
             self._sessions[session_id] = (csrf, now + self.ttl)
             return session_id, csrf
 
@@ -206,12 +207,8 @@ class GatewayHandler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def _send_error(self, status: HTTPStatus, code: str, message: str) -> None:
-        body = (
-            '{"api_version":"v1","error":'
-            f'{{"code":"{code}","message":{message!r}}}'
-            '}'
-        ).replace("'", '"').encode("utf-8")
-        self._send_json(status, body)
+        payload = {"api_version": "v1", "error": {"code": code, "message": message}}
+        self._send_json(status, json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
 
     def _read_json_body(self) -> dict | None:
         try:
@@ -225,7 +222,6 @@ class GatewayHandler(BaseHTTPRequestHandler):
             raise ValueError("short request body")
         if not raw:
             return None
-        import json
         value = json.loads(raw.decode("utf-8"))
         if not isinstance(value, dict):
             raise ValueError("JSON body must be an object")
@@ -237,7 +233,8 @@ class GatewayHandler(BaseHTTPRequestHandler):
             referer = self.headers.get("Referer")
             if not referer:
                 return True
-            origin = f"{urlsplit(referer).scheme}://{urlsplit(referer).netloc}"
+            referer_parts = urlsplit(referer)
+            origin = f"{referer_parts.scheme}://{referer_parts.netloc}"
         expected = f"{'https' if self.gateway.secure_cookies else 'http'}://{self.headers.get('Host', '')}"
         return hmac.compare_digest(origin, expected)
 
@@ -294,10 +291,13 @@ class GatewayHandler(BaseHTTPRequestHandler):
                 self._send_error(HTTPStatus.UNAUTHORIZED, "session_required", "valid session required")
                 return
             session_id, csrf = session
-            import json
             self._send_json(
                 HTTPStatus.OK,
-                json.dumps({"authenticated": True, "csrf_token": csrf, "session": session_id[:8] + "…"}, separators=(",", ":")).encode(),
+                json.dumps(
+                    {"authenticated": True, "csrf_token": csrf, "session": session_id[:8] + "…"},
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                ).encode("utf-8"),
             )
             return
         if not any(path == p or path.startswith(p + "/") for p in ALLOWED_GET_PREFIXES):
@@ -384,7 +384,6 @@ class GatewayHandler(BaseHTTPRequestHandler):
             self._send_error(HTTPStatus.FORBIDDEN, "invalid_origin", "request origin is not allowed")
             return
         session_id, csrf = self.gateway.sessions.create()
-        import json
         payload = json.dumps({"authenticated": True, "csrf_token": csrf}, separators=(",", ":")).encode()
         self._send_json(HTTPStatus.OK, payload, [("Set-Cookie", self._set_session_cookie(session_id))])
 
