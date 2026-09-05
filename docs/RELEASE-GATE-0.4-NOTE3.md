@@ -1,0 +1,1 @@
+The release gate treats lifecycle concurrency as a required contract, not a best-effort optimization. Upgrade transaction and real backend evidence remain required before v0.4.0 publication.
