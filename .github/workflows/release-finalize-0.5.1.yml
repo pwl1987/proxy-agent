@@ -36,30 +36,48 @@ jobs:
           echo "repository=$GITHUB_REPOSITORY"
           echo "expected_source=$EXPECTED_SOURCE"
           git fetch --tags --force origin
-          old_target="$(git rev-list -n1 refs/tags/$TAG^{commit})"
-          echo "old_tag_target=$old_target"
+          if git rev-parse --verify "refs/tags/$TAG^{commit}" >/dev/null 2>&1; then
+            old_target="$(git rev-list -n1 "refs/tags/$TAG^{commit}")"
+            echo "old_tag_target=$old_target"
+          else
+            echo 'old_tag_target=absent'
+          fi
           echo "branch_tree=$(git rev-parse HEAD^{tree})"
           git show -s --format='branch_commit=%H%nparents=%P%nauthor=%an <%ae>%ncommitter=%cn%ndate=%cI%nsubject=%s' HEAD
           version="$(tr -d '[:space:]' < VERSION)"
           echo "version=$version"
           test "$version" = "0.5.1"
 
-      - name: Remove published release and repair immutable tag
+      - name: Remove published release and repair tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
           echo '=== RELEASE REPAIR ==='
-          gh release delete "$TAG" --yes
-          git push origin --delete "refs/tags/$TAG"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --yes
+            echo 'old_release=deleted'
+          else
+            echo 'old_release=absent'
+          fi
+          git fetch --tags --force origin
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            git push origin --delete "refs/tags/$TAG"
+            echo 'old_tag=deleted'
+          else
+            echo 'old_tag=absent'
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git tag -a -f "$TAG" "$EXPECTED_SOURCE" -m 'release: proxy-agent 0.5.1'
           git push origin "refs/tags/$TAG"
           git fetch --tags --force origin
-          repaired_target="$(git rev-list -n1 refs/tags/$TAG^{commit})"
+          repaired_target="$(git rev-list -n1 "refs/tags/$TAG^{commit}")"
           echo "new_tag_target=$repaired_target"
           test "$repaired_target" = "$EXPECTED_SOURCE"
           git show -s --format='tag_commit=%H%ntag_subject=%s%ntag_date=%cI' "$TAG"
+          echo 'tag_repair=passed'
 
       - name: Checkout release tag and prove source identity
         shell: bash
@@ -69,7 +87,7 @@ jobs:
           git checkout --detach "$TAG"
           source_commit="$(git rev-parse HEAD)"
           source_tree="$(git rev-parse HEAD^{tree})"
-          tag_target="$(git rev-list -n1 refs/tags/$TAG^{commit})"
+          tag_target="$(git rev-list -n1 "refs/tags/$TAG^{commit}")"
           echo "source_commit=$source_commit"
           echo "source_tree=$source_tree"
           echo "tag_target=$tag_target"
