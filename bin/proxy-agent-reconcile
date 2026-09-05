@@ -36,6 +36,10 @@ def call_store(function: str, *args: str) -> str:
 def run_proxy_ctl(config: Path, command: str) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["PA_CONFIG"] = str(config)
+    pass_fds: tuple[int, ...] = ()
+    inherited_fd = env.get("PA_LIFECYCLE_FD", "")
+    if env.get("PA_LIFECYCLE_FD_INHERITED") == "true" and inherited_fd.isdigit():
+        pass_fds = (int(inherited_fd),)
     return subprocess.run(
         [str(PROXY_CTL), command],
         cwd=ROOT,
@@ -44,6 +48,7 @@ def run_proxy_ctl(config: Path, command: str) -> subprocess.CompletedProcess[str
         stderr=subprocess.PIPE,
         text=True,
         check=False,
+        pass_fds=pass_fds,
     )
 
 
@@ -64,9 +69,21 @@ def lifecycle_lock(state_dir: Path):
     with lock_path.open("a+b") as lock_file:
         os.chmod(lock_path, 0o600)
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        previous_fd = os.environ.get("PA_LIFECYCLE_FD")
+        previous_inherited = os.environ.get("PA_LIFECYCLE_FD_INHERITED")
+        os.environ["PA_LIFECYCLE_FD"] = str(lock_file.fileno())
+        os.environ["PA_LIFECYCLE_FD_INHERITED"] = "true"
         try:
             yield
         finally:
+            if previous_fd is None:
+                os.environ.pop("PA_LIFECYCLE_FD", None)
+            else:
+                os.environ["PA_LIFECYCLE_FD"] = previous_fd
+            if previous_inherited is None:
+                os.environ.pop("PA_LIFECYCLE_FD_INHERITED", None)
+            else:
+                os.environ["PA_LIFECYCLE_FD_INHERITED"] = previous_inherited
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
