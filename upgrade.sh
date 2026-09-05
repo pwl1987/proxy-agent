@@ -78,6 +78,9 @@ restore_previous() {
   if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || true
     if $was_active; then
+      # The restored service invokes proxy-ctl run, which acquires the same
+      # lifecycle lock. Release our transaction lock before restarting it.
+      state_lifecycle_lock_release
       systemctl start "$SERVICE_NAME" || true
     fi
   fi
