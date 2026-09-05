@@ -30,7 +30,6 @@
           <div style="font-weight:600;margin-bottom:8px">Listeners</div>
           ${field("SOCKS bind", "form-socks-bind")}
           ${field("SOCKS port", "form-socks-port", "number")}
-          <div style="height:6px"></div>
           <label>HTTP listener enabled<input id="form-http-enabled" type="checkbox" style="width:auto" /></label>
           ${field("HTTP bind", "form-http-bind")}
           ${field("HTTP port", "form-http-port", "number")}
@@ -57,7 +56,7 @@
 
     get(panel, "form-load").addEventListener("click", () => syncFromJson(panel));
     get(panel, "form-apply").addEventListener("click", () => writeToJson(panel));
-    get(panel, "form-backend").addEventListener("change", () => renderBackendOptions(panel));
+    get(panel, "form-backend").addEventListener("change", () => { renderBackendOptions(panel); renderEgress(panel, null); });
     syncFromJson(panel);
   }
 
@@ -65,12 +64,9 @@
     const type = get(panel, "form-backend").value;
     const opts = (cfg && cfg.backend && cfg.backend.options) || {};
     let html = "";
-    if (type === "local-endpoint") html = field("Proxy URL", "form-opt-proxy-url");
-    else if (type === "http-connect") html = field("Proxy URL", "form-opt-proxy-url");
+    if (type === "local-endpoint" || type === "http-connect") html = field("Proxy URL", "form-opt-proxy-url");
     else if (type === "sing-box" || type === "mihomo") html = field("Config path", "form-opt-config-path") + field("Binary", "form-opt-binary");
-    else if (type === "ssh-socks") {
-      html = field("Remote host", "form-ssh-host") + field("Remote user", "form-ssh-user") + field("Remote port", "form-ssh-port", "number") + field("Identity ref", "form-ssh-key") + field("Known hosts ref", "form-ssh-known");
-    }
+    else if (type === "ssh-socks") html = field("Remote host", "form-ssh-host") + field("Remote user", "form-ssh-user") + field("Remote port", "form-ssh-port", "number") + field("Identity ref", "form-ssh-key") + field("Known hosts ref", "form-ssh-known");
     get(panel, "backend-options").innerHTML = html;
     if (type === "local-endpoint" || type === "http-connect") get(panel, "form-opt-proxy-url").value = esc(opts.proxy_url || "");
     if (type === "sing-box" || type === "mihomo") {
@@ -88,6 +84,20 @@
     }
   }
 
+  function endpointEditor(prefix, value) {
+    const endpoint = value || {};
+    return field("Host", `${prefix}-host`) + field("User", `${prefix}-user`) + field("Port", `${prefix}-port`, "number") + field("Identity ref", `${prefix}-key`) + field("Known hosts ref", `${prefix}-known`);
+  }
+
+  function fillEndpoint(panel, prefix, value) {
+    const endpoint = value || {};
+    get(panel, `${prefix}-host`).value = esc(endpoint.host || "");
+    get(panel, `${prefix}-user`).value = esc(endpoint.user || "");
+    get(panel, `${prefix}-port`).value = endpoint.port || 22;
+    get(panel, `${prefix}-key`).value = esc(endpoint.identity_ref || "");
+    get(panel, `${prefix}-known`).value = esc(endpoint.known_hosts_ref || "");
+  }
+
   function renderEgress(panel, cfg) {
     const type = get(panel, "form-backend").value;
     const current = cfg && cfg.egress_path;
@@ -96,30 +106,15 @@
       return;
     }
     const mode = current?.mode || "direct";
-    get(panel, "egress-options").innerHTML = `
-      ${select("Mode", "form-egress-mode", ["direct", "jump"])}
-      ${select("DNS mode", "form-egress-dns", ["remote", "local"])}
-      <div id="egress-target"></div>
-      <div id="egress-jump"></div>`;
+    get(panel, "egress-options").innerHTML = `${select("Mode", "form-egress-mode", ["direct", "jump"])}${select("DNS mode", "form-egress-dns", ["remote", "local"])}<div id="egress-target"></div><div id="egress-jump"></div>`;
     get(panel, "form-egress-mode").value = mode;
     get(panel, "form-egress-dns").value = current?.dns_mode || "remote";
-    const renderEndpoint = (container, prefix, value, requiredRef) => {
-      container.innerHTML = field("Host", `${prefix}-host`) + field("User", `${prefix}-user`) + field("Port", `${prefix}-port`, "number") + field("Identity ref", `${prefix}-key") + field("Known hosts ref", `${prefix}-known`);
-      const endpoint = value || {};
-      get(container, `${prefix}-host`).value = esc(endpoint.host || "");
-      get(container, `${prefix}-user`).value = esc(endpoint.user || "");
-      get(container, `${prefix}-port`).value = endpoint.port || 22;
-      get(container, `${prefix}-key`).value = esc(endpoint.identity_ref || "");
-      get(container, `${prefix}-known`).value = esc(endpoint.known_hosts_ref || "");
-      if (!requiredRef) {
-        get(container, `${prefix}-key`).removeAttribute("required");
-        get(container, `${prefix}-known`).removeAttribute("required");
-      }
-    };
-    renderEndpoint(get(panel, "egress-target"), "target", current?.target, mode === "jump");
-    renderEndpoint(get(panel, "egress-jump"), "jump", current?.jump, true);
+    get(panel, "egress-target").innerHTML = endpointEditor("target", current?.target);
+    fillEndpoint(panel, "target", current?.target);
+    get(panel, "egress-jump").innerHTML = endpointEditor("jump", current?.jump);
+    fillEndpoint(panel, "jump", current?.jump);
     if (mode !== "jump") get(panel, "egress-jump").classList.add("hidden");
-    get(panel, "form-egress-mode").addEventListener("change", () => renderEgress(panel, cfg));
+    get(panel, "form-egress-mode").addEventListener("change", () => renderEgress(panel, { egress_path: { mode: get(panel, "form-egress-mode").value } }));
   }
 
   function syncFromJson(panel) {
@@ -182,12 +177,8 @@
         if (get(panel, "target-key").value.trim()) target.identity_ref = get(panel, "target-key").value.trim();
         if (get(panel, "target-known").value.trim()) target.known_hosts_ref = get(panel, "target-known").value.trim();
         cfg.egress_path = { transport: "ssh", mode, target, dns_mode: get(panel, "form-egress-dns")?.value || "remote" };
-        if (mode === "jump") {
-          cfg.egress_path.jump = { host: get(panel, "jump-host").value.trim(), user: get(panel, "jump-user").value.trim(), port: Number(get(panel, "jump-port").value), identity_ref: get(panel, "jump-key").value.trim(), known_hosts_ref: get(panel, "jump-known").value.trim() };
-        }
-      } else {
-        delete cfg.egress_path;
-      }
+        if (mode === "jump") cfg.egress_path.jump = { host: get(panel, "jump-host").value.trim(), user: get(panel, "jump-user").value.trim(), port: Number(get(panel, "jump-port").value), identity_ref: get(panel, "jump-key").value.trim(), known_hosts_ref: get(panel, "jump-known").value.trim() };
+      } else delete cfg.egress_path;
       document.getElementById("config").value = JSON.stringify(cfg, null, 2);
       get(panel, "form-msg").textContent = "结构化字段已写回 JSON；请继续执行“校验 + Diff”。";
     } catch (err) {
