@@ -45,7 +45,7 @@ python3 "$GATEWAY" \
   --port "$PORT" \
   --control-socket "$TMP/missing-control.sock" \
   --admin-token-file "$TOKEN_FILE" \
-  --allow-cidr '127.0.0.1/32' >"$LOG" 2>&1 &
+  --allow-cidr '127.0.0.1/32,127.0.0.1/32' >"$LOG" 2>&1 &
 GATEWAY_PID=$!
 
 for _ in {1..30}; do
@@ -54,9 +54,6 @@ for _ in {1..30}; do
 done
 
 curl -fsS "http://127.0.0.1:$PORT/healthz" | grep -q '"status":"ok"'
-
-status="$(PA_WEB_ALLOW_CIDRS='192.0.2.0/24' python3 "$GATEWAY" --listen 127.0.0.1 --port "$PORT" --admin-token-file "$TOKEN_FILE" --control-socket "$TMP/other.sock" --allow-cidr '127.0.0.1/32' >/dev/null 2>&1 & echo $!)"
-kill "$status" 2>/dev/null || true
-wait "$status" 2>/dev/null || true
+grep -q 'acl=127.0.0.1/32,127.0.0.1/32' "$LOG"
 
 echo 'PASS: web management listener ACL, CIDR validation and deny/allow boundary smoke'
