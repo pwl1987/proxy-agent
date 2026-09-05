@@ -101,6 +101,7 @@ grep -q '/api/v1/apply' "$TMP/ui.html"
 grep -q 'config-form.js' "$TMP/ui.html"
 grep -q 'profile-selector.js' "$TMP/ui.html"
 grep -q 'config-form-sync.js' "$TMP/ui.html"
+grep -q 'events-view.js' "$TMP/ui.html"
 grep -qi 'Cache-Control: no-store' "$TMP/ui.headers"
 
 status="$(curl -sS -D "$TMP/js.headers" -o "$TMP/config-form.js" -w '%{http_code}' "http://127.0.0.1:$PORT/config-form.js" || true)"
@@ -124,6 +125,13 @@ grep -q 'form-load' "$TMP/config-form-sync.js"
 grep -q 'configSyncBound' "$TMP/config-form-sync.js"
 grep -qi 'no-store' "$TMP/sync-js.headers"
 
+status="$(curl -sS -D "$TMP/events-js.headers" -o "$TMP/events-view.js" -w '%{http_code}' "http://127.0.0.1:$PORT/events-view.js" || true)"
+test "$status" = 200 || { cat "$LOG" >&2; cat "$TMP/events-view.js" >&2 || true; exit 1; }
+grep -q 'loadEvents' "$TMP/events-view.js"
+grep -q '/api/v1/events' "$TMP/events-view.js"
+grep -q 'eventsViewBound' "$TMP/events-view.js"
+grep -qi 'no-store' "$TMP/events-js.headers"
+
 status="$(curl -sS -D "$TMP/login.headers" -o "$TMP/login.body" -w '%{http_code}' \
   -c "$COOKIE_JAR" \
   -H 'Content-Type: application/json' \
@@ -141,4 +149,4 @@ status="$(curl -sS -o "$TMP/status.body" -w '%{http_code}' -b "$COOKIE_JAR" \
 test "$status" = 502 || { cat "$TMP/status.body" >&2; exit 1; }
 grep -q 'control_api_unavailable' "$TMP/status.body"
 
-echo 'PASS: web UI structured configuration, management ACL and gateway integration smoke'
+echo 'PASS: web UI structured configuration, management ACL, Profile discovery, event view and gateway integration smoke'
