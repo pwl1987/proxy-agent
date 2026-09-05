@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Render canonical typed config into the legacy runtime .conf format.
-
-Only typed fields are rendered. Secret references remain references and their contents
-are never read. Public listeners are rejected unless explicitly allowed by policy.
-"""
+"""Render canonical typed config into the legacy runtime .conf format."""
 from __future__ import annotations
 
 import json
@@ -23,7 +19,8 @@ def require(obj: dict[str, Any], key: str, path: str) -> Any:
 
 def assignment(name: str, value: Any) -> str:
     if isinstance(value, bool):
-        return f'{name}="{'true' if value else 'false'}"'
+        rendered = "true" if value else "false"
+        return f'{name}="{rendered}"'
     return f"{name}={shlex.quote(str(value))}"
 
 
@@ -90,7 +87,6 @@ def validate_direct_egress(config: dict[str, Any], backend: dict[str, Any]) -> d
     if mode not in {"direct", "jump"}:
         raise ValueError("egress_path.mode must be direct or jump")
 
-    # 0.5.0 direct configs remain valid: identity/known-host references are optional here.
     target = validate_ssh_endpoint(path.get("target"), "egress_path.target", mode == "jump", mode == "jump")
     dns_mode = path.get("dns_mode", "remote")
     if dns_mode not in {"local", "remote"}:
@@ -166,13 +162,9 @@ def build(config: dict[str, Any]) -> str:
             mapping = {
                 "REMOTE_HOST": target["host"], "REMOTE_USER": target["user"], "REMOTE_PORT": target["port"],
                 "REMOTE_SSH_KEY": target.get("identity_ref", options.get("remote_ssh_key_ref", "")),
-                "AUTOSSH_MONITOR_PORT": options.get("autossh_monitor_port", 0),
-                "SSH_SERVER_ALIVE_INTERVAL": options.get("ssh_server_alive_interval", 30),
-                "SSH_SERVER_ALIVE_COUNT_MAX": options.get("ssh_server_alive_count_max", 3),
-                "SSH_STRICT_HOST_KEY_CHECKING": options.get("ssh_strict_host_key_checking", security.get("ssh_host_key_checking", "yes")),
-                "SSH_KNOWN_HOSTS": target.get("known_hosts_ref", options.get("ssh_known_hosts_ref", "~/.ssh/known_hosts")),
-                "SSH_DNS_MODE": egress.get("dns_mode", "remote"),
-                "SSH_EGRESS_MODE": egress["mode"],
+                "AUTOSSH_MONITOR_PORT": options.get("autossh_monitor_port", 0), "SSH_SERVER_ALIVE_INTERVAL": options.get("ssh_server_alive_interval", 30),
+                "SSH_SERVER_ALIVE_COUNT_MAX": options.get("ssh_server_alive_count_max", 3), "SSH_STRICT_HOST_KEY_CHECKING": options.get("ssh_strict_host_key_checking", security.get("ssh_host_key_checking", "yes")),
+                "SSH_KNOWN_HOSTS": target.get("known_hosts_ref", options.get("ssh_known_hosts_ref", "~/.ssh/known_hosts")), "SSH_DNS_MODE": egress.get("dns_mode", "remote"), "SSH_EGRESS_MODE": egress["mode"],
             }
             if egress["mode"] == "jump":
                 jump = egress["jump"]
@@ -199,11 +191,8 @@ def build(config: dict[str, Any]) -> str:
         mapping = {"HTTP_CONNECT_PROXY_URL": options.get("proxy_url", "")}
     lines.extend(assignment(k, v) for k, v in mapping.items())
     lines.extend([
-        assignment("SOCKS_BIND", socks["bind"]), assignment("SOCKS_PORT", socks["port"]),
-        assignment("HTTP_ENABLED", http.get("enabled", False)), assignment("HTTP_BIND", http.get("bind", "127.0.0.1")),
-        assignment("HTTP_PORT", http.get("port", 8118)), assignment("SSH_STRICT_HOST_KEY_CHECKING", security.get("ssh_host_key_checking", "yes")),
-    ])
-    lines.extend([
+        assignment("SOCKS_BIND", socks["bind"]), assignment("SOCKS_PORT", socks["port"]), assignment("HTTP_ENABLED", http.get("enabled", False)),
+        assignment("HTTP_BIND", http.get("bind", "127.0.0.1")), assignment("HTTP_PORT", http.get("port", 8118)), assignment("SSH_STRICT_HOST_KEY_CHECKING", security.get("ssh_host_key_checking", "yes")),
         assignment("DIRECT_CIDRS", ",".join(routing.get("direct_cidrs", []))), assignment("DIRECT_DOMAINS", ",".join(routing.get("direct_domains", []))),
         assignment("NO_PROXY_EXTRA", ",".join(routing.get("no_proxy_extra", []))),
     ])
@@ -211,10 +200,9 @@ def build(config: dict[str, Any]) -> str:
     legacy_rules = [f'{rule["priority"]}|{rule["action"].upper()}|{rule["matcher"]}|{rule["pattern"]}' for rule in sorted(rules, key=lambda x: (x["priority"], x["action"], x["matcher"], x["pattern"]))]
     lines.append(assignment("ROUTE_RULES", "\n".join(legacy_rules)))
     lines.extend([
-        assignment("HEALTH_TARGETS", ",".join(health.get("targets", []))), assignment("HEALTH_NETWORK_REQUIRED", health["network_required"]),
-        assignment("HEALTH_TIMEOUT", health["timeout"]), assignment("HEALTH_RETRIES", health["retries"]), assignment("HEALTH_BACKOFF", health["backoff"]),
-        assignment("HEALTH_AUTO_RECOVER", health["auto_recover"]), assignment("INTEGRATE_GIT", integrations["git"]), assignment("INTEGRATE_DOCKER", integrations["docker"]),
-        assignment("INTEGRATE_PIP", integrations["pip"]), assignment("INTEGRATE_NPM", integrations["npm"]),
+        assignment("HEALTH_TARGETS", ",".join(health.get("targets", []))), assignment("HEALTH_NETWORK_REQUIRED", health["network_required"]), assignment("HEALTH_TIMEOUT", health["timeout"]),
+        assignment("HEALTH_RETRIES", health["retries"]), assignment("HEALTH_BACKOFF", health["backoff"]), assignment("HEALTH_AUTO_RECOVER", health["auto_recover"]),
+        assignment("INTEGRATE_GIT", integrations["git"]), assignment("INTEGRATE_DOCKER", integrations["docker"]), assignment("INTEGRATE_PIP", integrations["pip"]), assignment("INTEGRATE_NPM", integrations["npm"]),
     ])
     return "\n".join(lines) + "\n"
 
