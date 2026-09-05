@@ -69,8 +69,12 @@ state_lock_acquire() {
 }
 
 state_lock_release() {
-  local lock_dir="$(state_lock_dir)" quarantine
+  local lock_dir="$(state_lock_dir)" quarantine holder_pid holder_start current_start
   [[ -d "$lock_dir" ]] || return 0
+  holder_pid="$(cat "$lock_dir/pid" 2>/dev/null || true)"
+  holder_start="$(cat "$lock_dir/starttime" 2>/dev/null || true)"
+  current_start="$(state_proc_starttime "$$" 2>/dev/null || true)"
+  [[ "$holder_pid" == "$$" && -n "$holder_start" && "$holder_start" == "$current_start" ]] || return 0
   quarantine="${lock_dir}.release.$$"
   if mv "$lock_dir" "$quarantine" 2>/dev/null; then
     rm -rf -- "$quarantine"
