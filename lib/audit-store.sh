@@ -25,19 +25,17 @@ audit_lock_is_stale() {
   [[ "$current" != "$start" ]]
 }
 audit_lock_reclaim() {
-  local lock="$(audit_lock_dir)" guard="$(audit_lock_dir).reclaim" stale="${lock}.stale.$$.$RANDOM" created now
+  local lock="$(audit_lock_dir)" guard="$(audit_lock_dir).reclaim" stale="${lock}.stale.$$.$RANDOM" guard_created guard_now
   if ! mkdir "$guard" 2>/dev/null; then
-    created="$(cat "$guard/created" 2>/dev/null || true)"
-    now="$(date +%s)"
-    if [[ "$created" =~ ^[0-9]+$ ]] && (( now - created > 30 )); then
+    guard_created="$(stat -c %Y "$guard" 2>/dev/null || true)"
+    guard_now="$(date +%s)"
+    if [[ "$guard_created" =~ ^[0-9]+$ ]] && (( guard_now - guard_created > 30 )); then
       rm -rf "$guard" 2>/dev/null || true
     else
       return 1
     fi
     mkdir "$guard" 2>/dev/null || return 1
   fi
-  printf '%s\n' "$$" >"$guard/pid"
-  printf '%s\n' "$(date +%s)" >"$guard/created"
   if audit_lock_is_stale; then
     if mv "$lock" "$stale" 2>/dev/null; then
       rm -rf "$stale"
