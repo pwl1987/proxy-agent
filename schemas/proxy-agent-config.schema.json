@@ -7,168 +7,33 @@
   "additionalProperties": false,
   "required": ["schema_version", "backend", "listeners", "health", "integrations", "routing", "security"],
   "properties": {
-    "schema_version": {
-      "type": "integer",
-      "const": 1,
-      "description": "Typed configuration schema version. This is independent from proxy-agent release version."
-    },
-    "profile": {
-      "type": "string",
-      "pattern": "^[A-Za-z0-9._-]+$",
-      "default": "default"
-    },
-    "backend": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["type"],
-      "properties": {
-        "type": {
-          "type": "string",
-          "pattern": "^[A-Za-z0-9._-]+$"
-        },
-        "options": {
-          "type": "object",
-          "description": "Backend-specific typed options. Backend contracts define the allowed keys."
-        }
-      }
-    },
-    "egress_path": {
-      "$ref": "#/$defs/directEgressPath",
-      "description": "Optional canonical upstream path. 0.5.0 implements only one direct SSH path."
-    },
-    "listeners": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["socks5"],
-      "properties": {
-        "socks5": {"$ref": "#/$defs/listener"},
-        "http": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["enabled", "bind", "port"],
-          "properties": {
-            "enabled": {"type": "boolean"},
-            "bind": {"type": "string", "minLength": 1},
-            "port": {"$ref": "#/$defs/port"}
-          },
-          "default": {"enabled": false, "bind": "127.0.0.1", "port": 8118}
-        }
-      }
-    },
-    "routing": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "direct_cidrs": {
-          "type": "array",
-          "items": {"$ref": "#/$defs/nonEmptyString"},
-          "uniqueItems": true,
-          "default": []
-        },
-        "direct_domains": {
-          "type": "array",
-          "items": {"$ref": "#/$defs/hostnamePattern"},
-          "uniqueItems": true,
-          "default": []
-        },
-        "no_proxy_extra": {
-          "type": "array",
-          "items": {"$ref": "#/$defs/nonEmptyString"},
-          "uniqueItems": true,
-          "default": []
-        },
-        "rules": {
-          "type": "array",
-          "items": {"$ref": "#/$defs/routeRule"},
-          "default": []
-        }
-      },
-      "default": {"direct_cidrs": [], "direct_domains": [], "no_proxy_extra": [], "rules": []}
-    },
-    "health": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["network_required", "timeout", "retries", "backoff", "auto_recover"],
-      "properties": {
-        "network_required": {"type": "boolean"},
-        "timeout": {"type": "integer", "minimum": 1, "maximum": 3600},
-        "retries": {"type": "integer", "minimum": 0, "maximum": 100},
-        "backoff": {"type": "integer", "minimum": 0, "maximum": 3600},
-        "auto_recover": {"type": "boolean"},
-        "targets": {
-          "type": "array",
-          "items": {"$ref": "#/$defs/httpUrl"},
-          "uniqueItems": true,
-          "default": []
-        }
-      }
-    },
-    "integrations": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["git", "docker", "pip", "npm"],
-      "properties": {
-        "git": {"type": "boolean"},
-        "docker": {"type": "boolean"},
-        "pip": {"type": "boolean"},
-        "npm": {"type": "boolean"}
-      }
-    },
-    "security": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["ssh_host_key_checking", "allow_public_listener"],
-      "properties": {
-        "ssh_host_key_checking": {"type": "string", "enum": ["yes", "accept-new"]},
-        "allow_public_listener": {
-          "type": "boolean",
-          "default": false,
-          "description": "Public listener exposure is disabled by default. Enabling it is an explicit deployment decision and must be combined with the applicable authentication/network policy."
-        }
-      }
-    }
+    "schema_version": {"type": "integer", "const": 1, "description": "Typed configuration schema version. This is independent from proxy-agent release version."},
+    "profile": {"type": "string", "pattern": "^[A-Za-z0-9._-]+$", "default": "default"},
+    "backend": {"type": "object", "additionalProperties": false, "required": ["type"], "properties": {"type": {"type": "string", "pattern": "^[A-Za-z0-9._-]+$"}, "options": {"type": "object", "description": "Backend-specific typed options. Backend contracts define the allowed keys."}}},
+    "egress_path": {"$ref": "#/$defs/sshEgressPath", "description": "Canonical upstream path. 0.5.1 supports one direct or one-hop SSH path."},
+    "listeners": {"type": "object", "additionalProperties": false, "required": ["socks5"], "properties": {"socks5": {"$ref": "#/$defs/listener"}, "http": {"type": "object", "additionalProperties": false, "required": ["enabled", "bind", "port"], "properties": {"enabled": {"type": "boolean"}, "bind": {"type": "string", "minLength": 1}, "port": {"$ref": "#/$defs/port"}}, "default": {"enabled": false, "bind": "127.0.0.1", "port": 8118}}}},
+    "routing": {"type": "object", "additionalProperties": false, "properties": {"direct_cidrs": {"type": "array", "items": {"$ref": "#/$defs/nonEmptyString"}, "uniqueItems": true, "default": []}, "direct_domains": {"type": "array", "items": {"$ref": "#/$defs/hostnamePattern"}, "uniqueItems": true, "default": []}, "no_proxy_extra": {"type": "array", "items": {"$ref": "#/$defs/nonEmptyString"}, "uniqueItems": true, "default": []}, "rules": {"type": "array", "items": {"$ref": "#/$defs/routeRule"}, "default": []}}, "default": {"direct_cidrs": [], "direct_domains": [], "no_proxy_extra": [], "rules": []}},
+    "health": {"type": "object", "additionalProperties": false, "required": ["network_required", "timeout", "retries", "backoff", "auto_recover"], "properties": {"network_required": {"type": "boolean"}, "timeout": {"type": "integer", "minimum": 1, "maximum": 3600}, "retries": {"type": "integer", "minimum": 0, "maximum": 100}, "backoff": {"type": "integer", "minimum": 0, "maximum": 3600}, "auto_recover": {"type": "boolean"}, "targets": {"type": "array", "items": {"$ref": "#/$defs/httpUrl"}, "uniqueItems": true, "default": []}}},
+    "integrations": {"type": "object", "additionalProperties": false, "required": ["git", "docker", "pip", "npm"], "properties": {"git": {"type": "boolean"}, "docker": {"type": "boolean"}, "pip": {"type": "boolean"}, "npm": {"type": "boolean"}}},
+    "security": {"type": "object", "additionalProperties": false, "required": ["ssh_host_key_checking", "allow_public_listener"], "properties": {"ssh_host_key_checking": {"type": "string", "enum": ["yes", "accept-new"]}, "allow_public_listener": {"type": "boolean", "default": false, "description": "Public listener exposure is disabled by default. Enabling it is an explicit deployment decision and must be combined with the applicable authentication/network policy."}}}
   },
   "$defs": {
-    "directEgressPath": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["transport", "mode", "target"],
-      "properties": {
-        "transport": {"type": "string", "const": "ssh"},
-        "mode": {"type": "string", "const": "direct"},
-        "target": {"$ref": "#/$defs/directEgressTarget"}
-      }
+    "sshEgressPath": {
+      "type": "object", "additionalProperties": false, "required": ["transport", "mode", "target"],
+      "properties": {"transport": {"type": "string", "const": "ssh"}, "mode": {"type": "string", "enum": ["direct", "jump"]}, "target": {"$ref": "#/$defs/sshTargetDirectOrJump"}, "jump": {"$ref": "#/$defs/sshJump"}, "dns_mode": {"type": "string", "enum": ["local", "remote"], "default": "remote"}},
+      "allOf": [
+        {"if": {"properties": {"mode": {"const": "direct"}}}, "then": {"not": {"required": ["jump"]}}},
+        {"if": {"properties": {"mode": {"const": "jump"}}}, "then": {"required": ["jump", "dns_mode"]}}
+      ]
     },
-    "directEgressTarget": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["host", "user", "port"],
-      "properties": {
-        "host": {"type": "string", "minLength": 1},
-        "user": {"type": "string", "minLength": 1},
-        "port": {"$ref": "#/$defs/port"}
-      }
-    },
-    "listener": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["bind", "port"],
-      "properties": {"bind": {"type": "string", "minLength": 1}, "port": {"$ref": "#/$defs/port"}}
-    },
+    "sshTargetDirectOrJump": {"type": "object", "additionalProperties": false, "required": ["host", "user", "port"], "properties": {"host": {"type": "string", "minLength": 1}, "user": {"type": "string", "minLength": 1}, "port": {"$ref": "#/$defs/port"}, "identity_ref": {"$ref": "#/$defs/fileReference"}, "known_hosts_ref": {"$ref": "#/$defs/fileReference"}}},
+    "sshJump": {"type": "object", "additionalProperties": false, "required": ["host", "user", "port", "identity_ref", "known_hosts_ref"], "properties": {"host": {"type": "string", "minLength": 1}, "user": {"type": "string", "minLength": 1}, "port": {"$ref": "#/$defs/port"}, "identity_ref": {"$ref": "#/$defs/fileReference"}, "known_hosts_ref": {"$ref": "#/$defs/fileReference"}}},
+    "fileReference": {"type": "string", "pattern": "^file:.+$"},
+    "listener": {"type": "object", "additionalProperties": false, "required": ["bind", "port"], "properties": {"bind": {"type": "string", "minLength": 1}, "port": {"$ref": "#/$defs/port"}}},
     "port": {"type": "integer", "minimum": 1, "maximum": 65535},
     "nonEmptyString": {"type": "string", "minLength": 1},
     "hostnamePattern": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9_*.?-]+$"},
     "httpUrl": {"type": "string", "pattern": "^https?://[^\\s]+$"},
-    "routeRule": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["priority", "action", "matcher", "pattern"],
-      "properties": {
-        "priority": {"type": "integer", "minimum": 0, "maximum": 1000000},
-        "action": {"type": "string", "enum": ["proxy", "direct"]},
-        "matcher": {"type": "string", "enum": ["exact", "suffix", "wildcard", "cidr"]},
-        "pattern": {"type": "string", "minLength": 1}
-      }
-    }
+    "routeRule": {"type": "object", "additionalProperties": false, "required": ["priority", "action", "matcher", "pattern"], "properties": {"priority": {"type": "integer", "minimum": 0, "maximum": 1000000}, "action": {"type": "string", "enum": ["proxy", "direct"]}, "matcher": {"type": "string", "enum": ["exact", "suffix", "wildcard", "cidr"]}, "pattern": {"type": "string", "minLength": 1}}}
   }
 }

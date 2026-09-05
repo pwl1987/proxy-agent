@@ -142,9 +142,31 @@ state_json_quote() {
   printf '"%s"' "$value"
 }
 
+state_existing_path_health() {
+  local file="$(state_file)"
+  if [[ -r "$file" ]]; then
+    python3 - "$file" <<'PY'
+import json
+import sys
+from pathlib import Path
+try:
+    data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    path = data.get("health", {}).get("path")
+    if isinstance(path, dict):
+        print(json.dumps(path, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+        raise SystemExit(0)
+except (OSError, ValueError, TypeError, json.JSONDecodeError):
+    pass
+raise SystemExit(1)
+PY
+    return
+  fi
+  return 1
+}
+
 state_sync() {
   local backend_state='stopped' managed='false' pid='null' identity='' endpoint='' adapter_state='disabled' adapter_type='none'
-  local started_at last_transition last_healthy last_unhealthy last_recovered
+  local started_at last_transition last_healthy last_unhealthy last_recovered path_health
 
   if backend_status >/dev/null 2>&1; then backend_state='ready'; fi
   if backend_managed >/dev/null 2>&1; then managed='true'; fi
@@ -154,6 +176,11 @@ state_sync() {
     identity="$(backend_process_identity 2>/dev/null || true)"
   fi
   endpoint="$(backend_endpoint 2>/dev/null || true)"
+  path_health="${PA_HEALTH_PATH_DETAIL:-}"
+  if [[ -z "$path_health" ]]; then
+    path_health="$(state_existing_path_health 2>/dev/null || true)"
+  fi
+  [[ -n "$path_health" ]] || path_health='{"transport_status":"unknown","jump_status":"unknown","target_status":"unknown","proxy_status":"unknown","overall_status":"unknown","reason":"health_not_checked","last_checked":null}'
   if [[ "${HTTP_ENABLED:-false}" == true ]]; then
     adapter_type='privoxy'
     if adapter_privoxy_status >/dev/null 2>&1; then adapter_state='ready'; else adapter_state='stopped'; fi
@@ -168,12 +195,12 @@ state_sync() {
 
   local tmp
   tmp="$(mktemp "$(state_dir)/runtime.json.XXXXXX")"
-  printf '{"schema_version":2,"profile":%s,"backend":{"name":%s,"status":%s,"endpoint":%s,"managed":%s,"pid":%s,"identity":%s},"adapter":{"type":%s,"enabled":%s,"status":%s},"health":{"last_healthy":%s,"last_unhealthy":%s,"last_recovered":%s},"lifecycle":{"started_at":%s,"last_transition":%s}}\n' \
+  printf '{"schema_version":2,"profile":%s,"backend":{"name":%s,"status":%s,"endpoint":%s,"managed":%s,"pid":%s,"identity":%s},"adapter":{"type":%s,"enabled":%s,"status":%s},"health":{"last_healthy":%s,"last_unhealthy":%s,"last_recovered":%s,"path":%s},"lifecycle":{"started_at":%s,"last_transition":%s}}\n' \
     "$(state_json_quote "${PA_ACTIVE_PROFILE:-default}")" \
     "$(state_json_quote "$BACKEND")" "$(state_json_quote "$backend_state")" "$(state_json_quote "$endpoint")" \
     "$managed" "$pid" "$(state_json_quote "$identity")" \
     "$(state_json_quote "$adapter_type")" "${HTTP_ENABLED:-false}" "$(state_json_quote "$adapter_state")" \
-    "$last_healthy" "$last_unhealthy" "$last_recovered" "$started_at" "$last_transition" >"$tmp"
+    "$last_healthy" "$last_unhealthy" "$last_recovered" "$path_health" "$started_at" "$last_transition" >"$tmp"
   mv -f "$tmp" "$(state_file)"
   state_lock_release
 }

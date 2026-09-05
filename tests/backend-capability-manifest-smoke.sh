@@ -12,7 +12,6 @@ from pathlib import Path
 
 manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 schema = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))
-
 assert manifest["schema_version"] == 1
 assert schema["properties"]["schema_version"]["const"] == 1
 assert schema["properties"]["backends"]["additionalProperties"]["$ref"] == "#/$defs/backend"
@@ -25,6 +24,7 @@ for name, backend in manifest["backends"].items():
     for option in backend["options"]:
         assert option["type"] in {"string", "integer", "boolean", "secret_ref"}
         assert isinstance(option["required"], bool)
+assert {"supports_egress_path", "supports_jump", "supports_remote_dns"}.issubset(set(manifest["backends"]["ssh-socks"]["capabilities"]))
 PY
 
 source "$ROOT/lib/backend-capabilities.sh"
@@ -45,7 +45,7 @@ check_caps() {
   }
 }
 
-check_caps ssh-socks 'socks5,dynamic_dns,stream_proxy,supports_egress_path'
+check_caps ssh-socks 'socks5,dynamic_dns,stream_proxy,supports_egress_path,supports_jump,supports_remote_dns'
 check_caps sing-box 'socks5,stream_proxy'
 check_caps mihomo 'socks5,stream_proxy'
 check_caps http-connect 'http_native,stream_proxy'

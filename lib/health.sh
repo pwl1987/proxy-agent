@@ -138,7 +138,7 @@ health_clear_markers() {
 }
 
 health_mark() {
-  local state="$1" dir ts
+  local state="$1" detail="${2:-}" dir ts
   dir="$(health_markers_dir)"
   mkdir -p "$dir"
   ts="$(date +%s)"
@@ -146,18 +146,18 @@ health_mark() {
     healthy)
       rm -f "$dir/unhealthy" "$dir/recovered"
       printf '%s\n' "$ts" >"$dir/healthy"
-      health_record_event healthy checked 'liveness/network check passed'
+      health_record_event healthy checked "${detail:-liveness/network check passed}"
       ;;
     unhealthy)
       rm -f "$dir/healthy" "$dir/recovered"
       printf '%s\n' "$ts" >"$dir/unhealthy"
-      health_record_event unhealthy failed 'health check failed'
+      health_record_event unhealthy failed "${detail:-health check failed}"
       ;;
     recovered)
       rm -f "$dir/unhealthy"
       printf '%s\n' "$ts" >"$dir/healthy"
       printf '%s\n' "$ts" >"$dir/recovered"
-      health_record_event recovered checked 'automatic backend recovery succeeded'
+      health_record_event recovered checked "${detail:-automatic backend recovery succeeded}"
       ;;
     *)
       return 2
