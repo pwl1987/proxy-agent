@@ -18,19 +18,18 @@ health_recovery_lock_file() {
 }
 
 health_recovery_lock_acquire() {
-  local fd
   mkdir -p "$(health_markers_dir)"
   command -v flock >/dev/null 2>&1 || die '缺少 flock，无法保证健康恢复预算并发锁'
-  exec {fd}>"$(health_recovery_lock_file)"
+  exec {PA_HEALTH_RECOVERY_FD}>"$(health_recovery_lock_file)"
   chmod 0600 "$(health_recovery_lock_file)"
-  flock -x "$fd"
-  printf '%s' "$fd"
+  flock -x "$PA_HEALTH_RECOVERY_FD"
 }
 
 health_recovery_lock_release() {
-  local fd="$1"
-  flock -u "$fd" 2>/dev/null || true
-  eval "exec ${fd}>&-"
+  [[ -n "${PA_HEALTH_RECOVERY_FD:-}" ]] || return 0
+  flock -u "$PA_HEALTH_RECOVERY_FD" 2>/dev/null || true
+  eval "exec ${PA_HEALTH_RECOVERY_FD}>&-"
+  unset PA_HEALTH_RECOVERY_FD
 }
 
 health_json_quote() {
@@ -90,18 +89,17 @@ health_recovery_write_state() {
 }
 
 health_recovery_reset() {
-  local lock_fd
-  lock_fd="$(health_recovery_lock_acquire)"
+  health_recovery_lock_acquire
   health_recovery_write_state 0 0 0
-  health_recovery_lock_release "$lock_fd"
+  health_recovery_lock_release
 }
 
 health_recovery_allowed() {
-  local now="$(date +%s)" window_started attempts cooldown_until lock_fd
+  local now="$(date +%s)" window_started attempts cooldown_until
   local max_attempts="${HEALTH_RECOVERY_MAX_ATTEMPTS:-3}"
   local window="${HEALTH_RECOVERY_WINDOW:-900}"
   local cooldown="${HEALTH_RECOVERY_COOLDOWN:-300}"
-  lock_fd="$(health_recovery_lock_acquire)"
+  health_recovery_lock_acquire
   mapfile -t state < <(health_recovery_read_state)
   window_started="${state[0]:-0}"
   attempts="${state[1]:-0}"
@@ -116,20 +114,20 @@ health_recovery_allowed() {
 
   if (( cooldown_until > now )); then
     health_record_event recovery_cooldown skipped "automatic recovery cooldown active until $cooldown_until"
-    health_recovery_lock_release "$lock_fd"
+    health_recovery_lock_release
     return 1
   fi
 
   if (( attempts >= max_attempts )); then
     health_record_event recovery_exhausted blocked "automatic recovery budget exhausted ($attempts/$max_attempts in ${window}s)"
-    health_recovery_lock_release "$lock_fd"
+    health_recovery_lock_release
     return 1
   fi
 
   attempts=$((attempts + 1))
   cooldown_until=$((now + cooldown))
   health_recovery_write_state "$window_started" "$attempts" "$cooldown_until"
-  health_recovery_lock_release "$lock_fd"
+  health_recovery_lock_release
   return 0
 }
 
