@@ -50,7 +50,7 @@ assert lines["BACKEND"] == "ssh-socks"
 assert lines["REMOTE_HOST"] == "proxy.example.com"
 assert lines["REMOTE_USER"] == "proxy"
 assert lines["REMOTE_PORT"] == "22"
-assert lines["REMOTE_SSH_KEY"] == "~/.ssh/id_ed25519"
+assert lines["REMOTE_SSH_KEY"] == "'~/.ssh/id_ed25519'"
 assert "egress_path" not in out
 PY
 
