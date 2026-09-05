@@ -60,6 +60,9 @@ restore_previous() {
   if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
     systemctl --user daemon-reload || true
     if $was_active; then
+      # The restored user service invokes proxy-ctl run, which acquires the
+      # same lifecycle lock. Release our transaction lock before restarting it.
+      state_lifecycle_lock_release
       systemctl --user start "$SERVICE_NAME" || true
     fi
   fi
