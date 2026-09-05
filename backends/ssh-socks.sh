@@ -100,27 +100,39 @@ backend_ssh_socks_validate() {
 
 backend_ssh_socks_runtime_ssh_config() { printf '%s/ssh-socks-runtime.conf' "$PA_STATE_DIR"; }
 
+ssh_config_quote() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  printf '"%s"' "$value"
+}
+
 backend_ssh_socks_write_jump_config() {
   local file="$1" jump_key jump_known target_key target_known tmp
+  local jump_host jump_user target_host target_user jump_known_quoted target_known_quoted jump_key_quoted target_key_quoted
   jump_key="$(ssh_identity_resolve "$SSH_JUMP_KEY")"; jump_known="$(ssh_known_hosts_resolve "$SSH_JUMP_KNOWN_HOSTS")"
   target_key="$(ssh_identity_resolve "$SSH_TARGET_KEY")"; target_known="$(ssh_known_hosts_resolve "$SSH_TARGET_KNOWN_HOSTS")"
+  jump_host="$(ssh_config_quote "$SSH_JUMP_HOST")"; jump_user="$(ssh_config_quote "$SSH_JUMP_USER")"
+  target_host="$(ssh_config_quote "$REMOTE_HOST")"; target_user="$(ssh_config_quote "$REMOTE_USER")"
+  jump_key_quoted="$(ssh_config_quote "$jump_key")"; target_key_quoted="$(ssh_config_quote "$target_key")"
+  jump_known_quoted="$(ssh_config_quote "$jump_known")"; target_known_quoted="$(ssh_config_quote "$target_known")"
   tmp="${file}.tmp.$$"
   cat >"$tmp" <<EOF
 Host __proxy_agent_jump
-  HostName ${SSH_JUMP_HOST}
-  User ${SSH_JUMP_USER}
+  HostName ${jump_host}
+  User ${jump_user}
   Port ${SSH_JUMP_PORT}
-  IdentityFile ${jump_key}
-  UserKnownHostsFile ${jump_known}
+  IdentityFile ${jump_key_quoted}
+  UserKnownHostsFile ${jump_known_quoted}
   StrictHostKeyChecking ${SSH_STRICT_HOST_KEY_CHECKING:-yes}
   IdentitiesOnly yes
 
 Host __proxy_agent_target
-  HostName ${REMOTE_HOST}
-  User ${REMOTE_USER}
+  HostName ${target_host}
+  User ${target_user}
   Port ${REMOTE_PORT:-22}
-  IdentityFile ${target_key}
-  UserKnownHostsFile ${target_known}
+  IdentityFile ${target_key_quoted}
+  UserKnownHostsFile ${target_known_quoted}
   StrictHostKeyChecking ${SSH_STRICT_HOST_KEY_CHECKING:-yes}
   IdentitiesOnly yes
   ProxyJump __proxy_agent_jump
