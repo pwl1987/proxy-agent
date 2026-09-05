@@ -90,4 +90,28 @@ assert p.returncode != 0
 assert "egress_path.mode must be direct in 0.5.0" in p.stderr
 PY
 
+python3 - "$EXPORTER" "$base_json" <<'PY'
+import json
+import subprocess
+import sys
+
+doc = json.loads(sys.argv[2])
+doc["egress_path"]["dns_mode"] = "remote"
+p = subprocess.run([sys.executable, sys.argv[1]], input=json.dumps(doc), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+assert p.returncode != 0
+assert "egress_path fields are invalid" in p.stderr
+PY
+
+python3 - "$EXPORTER" "$base_json" <<'PY'
+import json
+import subprocess
+import sys
+
+doc = json.loads(sys.argv[2])
+del doc["egress_path"]["target"]["port"]
+p = subprocess.run([sys.executable, sys.argv[1]], input=json.dumps(doc), text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+assert p.returncode != 0
+assert "missing=port" in p.stderr
+PY
+
 printf 'egress path foundation smoke: PASS\n'
