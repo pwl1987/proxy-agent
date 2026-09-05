@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import importlib.machinery
 import importlib.util
+import io
 import json
 import os
 import stat
@@ -20,6 +21,16 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parent.parent
 CORE_PATH = Path(__file__).resolve().with_name("proxy-agent-api")
 ALLOWED_EVENTS = {"login.failure", "login.rate_limited", "login.success", "logout"}
+REMOTE_MUTATION_PATHS = {
+    "/api/v1/revisions",
+    "/api/v1/apply",
+    "/api/v1/rollback",
+    "/api/v1/runtime/start",
+    "/api/v1/runtime/stop",
+    "/api/v1/runtime/restart",
+    "/api/v1/runtime/test",
+    "/api/v1/runtime/diagnose",
+}
 MAX_EVENT_REASON = 64
 MAX_PEER = 255
 
@@ -50,18 +61,71 @@ class AuthEventHandler(core.ControlRequestHandler):
             self._send(HTTPStatus.INTERNAL_SERVER_ERROR, core.error_envelope("internal_error", str(exc)))
 
     def do_POST(self) -> None:
-        if urlsplit(self.path).path != "/api/v1/auth-events":
-            super().do_POST()
+        path = urlsplit(self.path).path
+        if path == "/api/v1/auth-events":
+            try:
+                body = self._read_json_body()
+                self._record_auth_event(body)
+            except json.JSONDecodeError as exc:
+                self._send(HTTPStatus.BAD_REQUEST, core.error_envelope("invalid_json", str(exc)))
+            except ValueError as exc:
+                self._send(HTTPStatus.BAD_REQUEST, core.error_envelope("invalid_request", str(exc)))
+            except Exception as exc:
+                self._send(HTTPStatus.INTERNAL_SERVER_ERROR, core.error_envelope("internal_error", str(exc)))
             return
+
+        if path in REMOTE_MUTATION_PATHS:
+            try:
+                body = self._read_and_restore_json_body()
+                self._require_remote_audit(path, body)
+            except json.JSONDecodeError as exc:
+                self._send(HTTPStatus.BAD_REQUEST, core.error_envelope("invalid_json", str(exc)))
+                return
+            except ValueError as exc:
+                self._send(HTTPStatus.BAD_REQUEST, core.error_envelope("invalid_request", str(exc)))
+                return
+            except AuditDurabilityError as exc:
+                self._send(HTTPStatus.SERVICE_UNAVAILABLE, core.error_envelope("audit_unavailable", str(exc)))
+                return
+            except Exception as exc:
+                self._send(HTTPStatus.INTERNAL_SERVER_ERROR, core.error_envelope("internal_error", str(exc)))
+                return
+
+        super().do_POST()
+
+    def _read_and_restore_json_body(self):
         try:
-            body = self._read_json_body()
-            self._record_auth_event(body)
-        except json.JSONDecodeError as exc:
-            self._send(HTTPStatus.BAD_REQUEST, core.error_envelope("invalid_json", str(exc)))
+            length = int(self.headers.get("Content-Length", "0"))
         except ValueError as exc:
-            self._send(HTTPStatus.BAD_REQUEST, core.error_envelope("invalid_request", str(exc)))
+            raise ValueError("invalid Content-Length") from exc
+        if length < 0 or length > core.MAX_BODY:
+            raise ValueError("request body too large")
+        raw = self.rfile.read(length)
+        if length and len(raw) != length:
+            raise ValueError("short request body")
+        self.rfile = io.BytesIO(raw)
+        return json.loads(raw.decode("utf-8")) if raw else None
+
+    def _require_remote_audit(self, path: str, body) -> None:
+        if not isinstance(body, dict) or body.get("actor") != "web-ui":
+            return
+        profile = self._profile_from_body(body)
+        record = {
+            "schema_version": 1,
+            "event": "remote_mutation.accepted",
+            "actor": "web-ui",
+            "timestamp": int(time.time()),
+            "status": "accepted",
+            "action": path.rsplit("/", 1)[-1],
+        }
+        if profile:
+            record["profile"] = profile
+        if body.get("revision") is not None:
+            record["revision"] = int(body["revision"])
+        try:
+            core.audit_call(profile, record)
         except Exception as exc:
-            self._send(HTTPStatus.INTERNAL_SERVER_ERROR, core.error_envelope("internal_error", str(exc)))
+            raise AuditDurabilityError(f"remote mutation audit could not be committed: {exc}") from exc
 
     def _profiles(self) -> None:
         env = os.environ.copy()
@@ -119,6 +183,10 @@ class AuthEventHandler(core.ControlRequestHandler):
             record["reason"] = reason
         core.safe_audit(profile, record)
         self._send(HTTPStatus.ACCEPTED, core.response_envelope("auth_event", {"accepted": True, "event": event}))
+
+
+class AuditDurabilityError(Exception):
+    pass
 
 
 class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
