@@ -100,7 +100,7 @@ state_lifecycle_lock_release() {
 }
 
 state_cli_lifecycle_lock_maybe() {
-  local caller="$(basename "${BASH_SOURCE[1]:-}")" command="${1:-}" lifecycle_command=''
+  local caller="$(basename "${0:-}")" command="${1:-}" lifecycle_command=''
   [[ "$caller" == 'proxy-ctl' ]] || return 0
   case "$command" in
     start|stop|restart|run) lifecycle_command="$command" ;;
