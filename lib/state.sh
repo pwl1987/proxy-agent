@@ -144,7 +144,7 @@ state_json_quote() {
 
 state_sync() {
   local backend_state='stopped' managed='false' pid='null' identity='' endpoint='' adapter_state='disabled' adapter_type='none'
-  local started_at last_transition last_healthy last_unhealthy last_recovered
+  local started_at last_transition last_healthy last_unhealthy last_recovered path_health
 
   if backend_status >/dev/null 2>&1; then backend_state='ready'; fi
   if backend_managed >/dev/null 2>&1; then managed='true'; fi
@@ -154,6 +154,7 @@ state_sync() {
     identity="$(backend_process_identity 2>/dev/null || true)"
   fi
   endpoint="$(backend_endpoint 2>/dev/null || true)"
+  path_health="$(backend_health_detail 2>/dev/null || printf '%s' '{"transport_status":"unknown","jump_status":"unknown","target_status":"unknown","proxy_status":"unknown","overall_status":"unknown","reason":"backend_health_detail_unavailable","last_checked":null}')"
   if [[ "${HTTP_ENABLED:-false}" == true ]]; then
     adapter_type='privoxy'
     if adapter_privoxy_status >/dev/null 2>&1; then adapter_state='ready'; else adapter_state='stopped'; fi
@@ -168,12 +169,12 @@ state_sync() {
 
   local tmp
   tmp="$(mktemp "$(state_dir)/runtime.json.XXXXXX")"
-  printf '{"schema_version":2,"profile":%s,"backend":{"name":%s,"status":%s,"endpoint":%s,"managed":%s,"pid":%s,"identity":%s},"adapter":{"type":%s,"enabled":%s,"status":%s},"health":{"last_healthy":%s,"last_unhealthy":%s,"last_recovered":%s},"lifecycle":{"started_at":%s,"last_transition":%s}}\n' \
+  printf '{"schema_version":2,"profile":%s,"backend":{"name":%s,"status":%s,"endpoint":%s,"managed":%s,"pid":%s,"identity":%s},"adapter":{"type":%s,"enabled":%s,"status":%s},"health":{"last_healthy":%s,"last_unhealthy":%s,"last_recovered":%s,"path":%s},"lifecycle":{"started_at":%s,"last_transition":%s}}\n' \
     "$(state_json_quote "${PA_ACTIVE_PROFILE:-default}")" \
     "$(state_json_quote "$BACKEND")" "$(state_json_quote "$backend_state")" "$(state_json_quote "$endpoint")" \
     "$managed" "$pid" "$(state_json_quote "$identity")" \
     "$(state_json_quote "$adapter_type")" "${HTTP_ENABLED:-false}" "$(state_json_quote "$adapter_state")" \
-    "$last_healthy" "$last_unhealthy" "$last_recovered" "$started_at" "$last_transition" >"$tmp"
+    "$last_healthy" "$last_unhealthy" "$last_recovered" "$path_health" "$started_at" "$last_transition" >"$tmp"
   mv -f "$tmp" "$(state_file)"
   state_lock_release
 }
