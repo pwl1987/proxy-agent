@@ -107,6 +107,11 @@ fi
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload
   if $was_active; then
+    # The systemd service invokes proxy-ctl, which must acquire the same
+    # lifecycle lock. Release our transaction lock before asking systemd to
+    # start the service, otherwise the service would wait on us while we wait
+    # for systemctl start to complete.
+    state_lifecycle_lock_release
     systemctl start "$SERVICE_NAME"
   fi
 fi
