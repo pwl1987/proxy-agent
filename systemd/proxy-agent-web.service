@@ -15,7 +15,8 @@ Environment=PA_CONTROL_SOCKET=/run/proxy-agent/control.sock
 Environment=PA_STATE_DIR=/run/proxy-agent
 Environment=PA_LOG_DIR=/var/log/proxy-agent
 Environment=PA_CONFIG=/etc/proxy-agent/proxy-agent.conf
-ExecStart=/usr/bin/python3 @PREFIX@/bin/proxy-agent-web-ui --listen ${PA_WEB_LISTEN} --port ${PA_WEB_PORT} --control-socket ${PA_CONTROL_SOCKET} --admin-token-file /etc/proxy-agent/web-admin-token
+EnvironmentFile=-/etc/proxy-agent/web.env
+ExecStart=/bin/bash -c 'exec /usr/bin/python3 @PREFIX@/bin/proxy-agent-web-ui --listen "$PA_WEB_LISTEN" --port "$PA_WEB_PORT" --control-socket "$PA_CONTROL_SOCKET" --admin-token-file /etc/proxy-agent/web-admin-token ${PA_WEB_TLS_CERT:+--tls-cert "$PA_WEB_TLS_CERT"} ${PA_WEB_TLS_KEY:+--tls-key "$PA_WEB_TLS_KEY"}'
 Restart=on-failure
 RestartSec=2
 KillMode=control-group
