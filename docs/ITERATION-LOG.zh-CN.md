@@ -149,7 +149,7 @@ RBAC、多租户、SSO/OIDC、持久 session store、独立 ACL engine、Profile
 
 截至当前 `main`，0.5.2 的 Web/LAN 管理面代码已经完成认证、显式源地址 ACL、Profile discovery/selector、结构化 Backend/Egress 表单、异步表单同步、health/revision/event 只读视图以及 remote mutation audit admission boundary；相关 PR 的 CI 与 Upgrade Transaction Gate 均已通过后合并。
 
-0.5.2 尚未正式发布：当前仓库 `VERSION` 仍为 `0.5.0`，因此不能把当前 `main` 误标记为 `v0.5.2` release；正式 release cut 前必须按现有 tag/VERSION 治理规则完成版本更新、Tag、容器 digest 与 provenance 收口。
+当前 `main` 的 `VERSION` 已为 `0.5.2`，并已通过 release-cut CI 与 Upgrade Transaction Gate。正式 Git Tag `v0.5.2`、容器 digest、GitHub Release 与 provenance 仍待 Tag publication 触发既有 release workflow 后完成，不能在此之前宣称 0.5.2 已正式发布。
 
 ## 发布治理变更
 

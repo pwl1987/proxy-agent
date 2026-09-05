@@ -34,6 +34,7 @@ jobs:
           node --check web/config-form.js
           node --check web/profile-selector.js
           node --check web/config-form-sync.js
+          node --check web/events-view.js
       - name: Typed config smoke
         run: bash tests/typed-config-smoke.sh
       - name: Legacy to typed config smoke
