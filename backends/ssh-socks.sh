@@ -5,14 +5,14 @@ set -euo pipefail
 
 backend_ssh_socks_capability() {
   case "$1" in
-    socks5|dynamic_dns|stream_proxy) return 0 ;;
+    socks5|dynamic_dns|stream_proxy|supports_egress_path) return 0 ;;
     http_native) return 1 ;;
     *) return 1 ;;
   esac
 }
 
 backend_ssh_socks_capabilities() {
-  printf '%s\n' socks5 dynamic_dns stream_proxy
+  printf '%s\n' socks5 dynamic_dns stream_proxy supports_egress_path
 }
 
 backend_ssh_socks_pid_file() {
