@@ -45,7 +45,7 @@ check_caps() {
   }
 }
 
-check_caps ssh-socks 'socks5,dynamic_dns,stream_proxy'
+check_caps ssh-socks 'socks5,dynamic_dns,stream_proxy,supports_egress_path'
 check_caps sing-box 'socks5,stream_proxy'
 check_caps mihomo 'socks5,stream_proxy'
 check_caps http-connect 'http_native,stream_proxy'
