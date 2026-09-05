@@ -76,14 +76,14 @@ python3 - "$EXPORTER" "$base_json" <<'PY'
 import json, subprocess, sys
 doc=json.loads(sys.argv[2]); doc["egress_path"]={"transport":"ssh","mode":"jump","target":{"host":"target.example","user":"target","port":22},"jump":{"host":"jump.example","user":"jump","port":22,"identity_ref":"file:/jump","known_hosts_ref":"file:/jump-hosts"}}
 p=subprocess.run([sys.executable,sys.argv[1]],input=json.dumps(doc),text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-assert p.returncode != 0 and "missing required field: egress_path.target.identity_ref" in p.stderr
+assert p.returncode != 0 and "egress_path.target.identity_ref must be a non-empty file: reference" in p.stderr
 PY
 
 python3 - "$EXPORTER" "$base_json" <<'PY'
 import json, subprocess, sys
 doc=json.loads(sys.argv[2]); doc["egress_path"]={"transport":"ssh","mode":"jump","dns_mode":"remote","target":{"host":"target.example","user":"target","port":22,"identity_ref":"file:/target","known_hosts_ref":"file:/target-hosts"},"jump":{"host":"jump.example","user":"jump","port":22,"identity_ref":"file:/jump","known_hosts_ref":"file:/jump-hosts","next":{"host":"third.example"}}}
 p=subprocess.run([sys.executable,sys.argv[1]],input=json.dumps(doc),text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
-assert p.returncode != 0 and "unknown fields: next" in p.stderr
+assert p.returncode != 0 and "contains unknown fields: next" in p.stderr
 PY
 
 printf 'egress path foundation smoke: PASS\n'
