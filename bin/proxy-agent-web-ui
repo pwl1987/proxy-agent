@@ -41,7 +41,38 @@ def is_loopback(host: str) -> bool:
         return host in {"localhost", "ip6-localhost"}
 
 
+def parse_cidrs(values: list[str]) -> tuple[ipaddress._BaseNetwork, ...]:
+    networks: list[ipaddress._BaseNetwork] = []
+    for raw in values:
+        for item in raw.split(","):
+            item = item.strip()
+            if not item:
+                continue
+            try:
+                networks.append(ipaddress.ip_network(item, strict=False))
+            except ValueError as exc:
+                raise ValueError(f"invalid management ACL CIDR: {item}") from exc
+    return tuple(networks)
+
+
 class WebUIHandler(core.GatewayHandler):
+    def _network_allowed(self) -> bool:
+        networks = self.gateway.management_acl
+        if not networks:
+            return True
+        peer = self.client_address[0] if self.client_address else ""
+        try:
+            address = ipaddress.ip_address(peer)
+        except ValueError:
+            return False
+        return any(address in network for network in networks)
+
+    def _require_network(self) -> bool:
+        if self._network_allowed():
+            return True
+        self._send_error(HTTPStatus.FORBIDDEN, "network_not_allowed", "management source address is not allowed")
+        return False
+
     def _audit_auth(self, event: str, status: str, reason: str | None = None) -> None:
         peer = self.client_address[0] if self.client_address else "unknown"
         payload = {
@@ -86,6 +117,8 @@ class WebUIHandler(core.GatewayHandler):
         self._send_json(HTTPStatus.OK, payload, [("Set-Cookie", self._set_session_cookie(session_id))])
 
     def do_POST(self) -> None:
+        if not self._require_network():
+            return
         path = self.path.split("?", 1)[0]
         if path == "/session/logout":
             session = self._session()
@@ -127,6 +160,8 @@ class WebUIHandler(core.GatewayHandler):
         self.wfile.write(payload)
 
     def do_GET(self) -> None:
+        if not self._require_network():
+            return
         path = self.path.split("?", 1)[0]
         if path in {"/", "/index.html"}:
             self._serve_ui()
@@ -141,13 +176,14 @@ class WebUIServer(ThreadingHTTPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, address: tuple[str, int], control_socket: str, admin_token: str, secure_cookies: bool) -> None:
+    def __init__(self, address: tuple[str, int], control_socket: str, admin_token: str, secure_cookies: bool, management_acl: tuple[ipaddress._BaseNetwork, ...]) -> None:
         super().__init__(address, WebUIHandler)
         self.control = core.UnixHTTPClient(control_socket)
         self.admin_token = admin_token
         self.sessions = core.SessionStore()
         self.login_limiter = core.LoginRateLimiter()
         self.secure_cookies = secure_cookies
+        self.management_acl = management_acl
 
 
 def main() -> int:
@@ -158,6 +194,7 @@ def main() -> int:
     parser.add_argument("--admin-token-file", required=True)
     parser.add_argument("--tls-cert", default=os.environ.get("PA_WEB_TLS_CERT"))
     parser.add_argument("--tls-key", default=os.environ.get("PA_WEB_TLS_KEY"))
+    parser.add_argument("--allow-cidr", action="append", default=None, help="allow a management source CIDR; repeat or use comma-separated values")
     args = parser.parse_args()
 
     loopback = is_loopback(args.listen)
@@ -166,9 +203,17 @@ def main() -> int:
     if args.port < 1 or args.port > 65535:
         parser.error("port out of range")
 
+    raw_acl = args.allow_cidr if args.allow_cidr is not None else ([os.environ["PA_WEB_ALLOW_CIDRS"]] if os.environ.get("PA_WEB_ALLOW_CIDRS") else [])
+    try:
+        management_acl = parse_cidrs(raw_acl)
+    except ValueError as exc:
+        parser.error(str(exc))
+    if not loopback and not management_acl:
+        parser.error("non-loopback management listener requires at least one --allow-cidr or PA_WEB_ALLOW_CIDRS entry")
+
     token = core.read_token(Path(args.admin_token_file).expanduser())
     secure_cookies = bool(args.tls_cert and args.tls_key)
-    server = WebUIServer((args.listen, args.port), args.control_socket, token, secure_cookies)
+    server = WebUIServer((args.listen, args.port), args.control_socket, token, secure_cookies, management_acl)
     if secure_cookies:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.minimum_version = ssl.TLSVersion.TLSv1_2
@@ -176,9 +221,10 @@ def main() -> int:
         server.socket = context.wrap_socket(server.socket, server_side=True)
 
     scheme = "https" if secure_cookies else "http"
+    acl_text = ",".join(str(network) for network in management_acl) or "unrestricted(loopback-only listener)"
     print(
         f"proxy-agent web UI listening on {scheme}://{args.listen}:{args.port} "
-        f"sessions=enabled csrf=enabled login_rate_limit={core.LOGIN_LIMIT}/{core.LOGIN_WINDOW}s",
+        f"sessions=enabled csrf=enabled login_rate_limit={core.LOGIN_LIMIT}/{core.LOGIN_WINDOW}s acl={acl_text}",
         flush=True,
     )
     server.serve_forever()
