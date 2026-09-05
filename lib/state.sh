@@ -49,8 +49,8 @@ state_lock_acquire() {
   mkdir -p "$(state_dir)"
   local lock_dir="$(state_lock_dir)" now quarantine
   for _ in {1..100}; do
+    now="$(date +%s)"
     if mkdir "$lock_dir" 2>/dev/null; then
-      now="$(date +%s)"
       printf '%s\n' "$$" >"$lock_dir/pid"
       printf '%s\n' "$(state_proc_starttime "$$" 2>/dev/null || printf 0)" >"$lock_dir/starttime"
       printf '%s\n' "$now" >"$lock_dir/created"
