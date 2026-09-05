@@ -53,7 +53,9 @@ audit_lock_acquire() {
   for _ in {1..100}; do
     if mkdir "$lock" 2>/dev/null; then
       now="$(date +%s)"
-      pid="${BASHPID:-$$}"
+      # $$ is stable for the owning Bash process, including function/subshell boundaries.
+      # starttime prevents PID reuse from being mistaken for the same owner.
+      pid="$$"
       printf '%s\n' "$pid" >"$lock/pid"
       printf '%s\n' "$(audit_proc_starttime "$pid" 2>/dev/null || printf 0)" >"$lock/starttime"
       printf '%s\n' "$now" >"$lock/created"
@@ -71,7 +73,7 @@ audit_lock_acquire() {
 audit_lock_release() {
   local lock="$(audit_lock_dir)" pid start current owner
   [[ -d "$lock" ]] || return 0
-  owner="${BASHPID:-$$}"
+  owner="$$"
   pid="$(cat "$lock/pid" 2>/dev/null || true)"
   start="$(cat "$lock/starttime" 2>/dev/null || true)"
   current="$(audit_proc_starttime "$owner" 2>/dev/null || true)"
