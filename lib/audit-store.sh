@@ -48,10 +48,18 @@ audit_lock_reclaim() {
   return 1
 }
 audit_lock_acquire() {
-  local dir="$(audit_dir)" lock="$(audit_lock_dir)" now pid
+  local dir="$(audit_dir)" lock="$(audit_lock_dir)" guard="$(audit_lock_dir).reclaim" now pid
   mkdir -p "$dir"
   for _ in {1..100}; do
+    [[ -d "$guard" ]] && { sleep 0.01; continue; }
     if mkdir "$lock" 2>/dev/null; then
+      # Reclaim and acquire coordinate through the guard. If reclaim won the
+      # race after mkdir, abandon this fresh lock before writing owner metadata.
+      if [[ -d "$guard" ]]; then
+        rmdir "$lock" 2>/dev/null || true
+        sleep 0.01
+        continue
+      fi
       now="$(date +%s)"
       # $$ is stable for the owning Bash process, including function/subshell boundaries.
       # starttime prevents PID reuse from being mistaken for the same owner.
