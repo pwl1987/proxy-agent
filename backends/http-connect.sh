@@ -36,9 +36,9 @@ backend_http_connect_validate() {
   local endpoint="${HTTP_CONNECT_PROXY_URL:-}" scheme authority host port
   [[ -n "$endpoint" ]] || die 'HTTP_CONNECT_PROXY_URL is required'
   [[ "$endpoint" =~ ^https?://[^/]+/?$ ]] || die 'HTTP_CONNECT_PROXY_URL must use http://host[:port] or https://host[:port]'
-
   authority="${endpoint#*://}"
   authority="${authority%%/*}"
+  [[ "$authority" != *@* ]] || die 'HTTP_CONNECT_PROXY_URL must not contain URL userinfo; credentials are not a supported configuration mechanism'
   if [[ "$authority" == \[*\]* ]]; then
     host="${authority%%]*}]"
     port="${authority#*]:}"
