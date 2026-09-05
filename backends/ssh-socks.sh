@@ -140,6 +140,69 @@ EOF
   chmod 0600 "$tmp"; mv -f "$tmp" "$file"
 }
 
+backend_ssh_socks_health_probe_direct() {
+  local key timeout
+  key="$(expand_home "$REMOTE_SSH_KEY")"
+  timeout="${HEALTH_TIMEOUT:-5}"
+  ssh -o BatchMode=yes -o ConnectTimeout="$timeout" -o ConnectionAttempts=1 \
+    -o StrictHostKeyChecking="${SSH_STRICT_HOST_KEY_CHECKING:-yes}" \
+    -o UserKnownHostsFile="$(expand_home "${SSH_KNOWN_HOSTS:-$HOME/.ssh/known_hosts}")" \
+    -i "$key" -p "${REMOTE_PORT:-22}" "${REMOTE_USER}@${REMOTE_HOST}" true >/dev/null 2>&1
+}
+
+backend_ssh_socks_health_probe_jump() {
+  local config="$1" alias="$2" timeout="${HEALTH_TIMEOUT:-5}"
+  ssh -F "$config" -o BatchMode=yes -o ConnectTimeout="$timeout" -o ConnectionAttempts=1 "$alias" true >/dev/null 2>&1
+}
+
+backend_ssh_socks_health_detail() {
+  local now="$(date +%s)" config jump_rc target_rc
+  case "${SSH_EGRESS_MODE:-direct}" in
+    direct)
+      if backend_ssh_socks_liveness; then
+        printf '{"transport_status":"ready","jump_status":"not_applicable","target_status":"ready","proxy_status":"ready","overall_status":"ready","reason":"ssh_tunnel_established","last_checked":%s}\n' "$now"
+      elif backend_ssh_socks_health_probe_direct; then
+        printf '{"transport_status":"ready","jump_status":"not_applicable","target_status":"ready","proxy_status":"failed","overall_status":"failed","reason":"proxy_listener_unavailable","last_checked":%s}\n' "$now"
+      else
+        printf '{"transport_status":"failed","jump_status":"not_applicable","target_status":"failed","proxy_status":"failed","overall_status":"failed","reason":"target_unreachable","last_checked":%s}\n' "$now"
+      fi
+      ;;
+    jump)
+      if backend_ssh_socks_liveness; then
+        printf '{"transport_status":"ready","jump_status":"ready","target_status":"ready","proxy_status":"ready","overall_status":"ready","reason":"ssh_jump_path_established","last_checked":%s}\n' "$now"
+        return 0
+      fi
+      config="$(backend_ssh_socks_runtime_ssh_config)"
+      if [[ ! -r "$config" ]]; then
+        printf '{"transport_status":"failed","jump_status":"unknown","target_status":"unknown","proxy_status":"failed","overall_status":"failed","reason":"runtime_config_missing","last_checked":%s}\n' "$now"
+        return 0
+      fi
+      if backend_ssh_socks_health_probe_jump "$config" __proxy_agent_jump; then
+        jump_rc=0
+      else
+        jump_rc=$?
+      fi
+      if (( jump_rc != 0 )); then
+        printf '{"transport_status":"failed","jump_status":"failed","target_status":"unknown","proxy_status":"failed","overall_status":"failed","reason":"jump_unreachable","last_checked":%s}\n' "$now"
+        return 0
+      fi
+      if backend_ssh_socks_health_probe_jump "$config" __proxy_agent_target; then
+        target_rc=0
+      else
+        target_rc=$?
+      fi
+      if (( target_rc != 0 )); then
+        printf '{"transport_status":"ready","jump_status":"ready","target_status":"failed","proxy_status":"failed","overall_status":"failed","reason":"target_unreachable","last_checked":%s}\n' "$now"
+      else
+        printf '{"transport_status":"ready","jump_status":"ready","target_status":"ready","proxy_status":"failed","overall_status":"failed","reason":"proxy_listener_unavailable","last_checked":%s}\n' "$now"
+      fi
+      ;;
+    *)
+      printf '{"transport_status":"unknown","jump_status":"unknown","target_status":"unknown","proxy_status":"unknown","overall_status":"unknown","reason":"egress_mode_invalid","last_checked":%s}\n' "$now"
+      ;;
+  esac
+}
+
 backend_ssh_socks_start() {
   backend_ssh_socks_validate
   mkdir -p "$PA_STATE_DIR" "$PA_LOG_DIR"
