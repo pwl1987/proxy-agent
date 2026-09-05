@@ -4,6 +4,7 @@ set -euo pipefail
 audit_dir() { printf '%s/audit' "$PA_STATE_DIR"; }
 audit_file() { printf '%s/events.jsonl' "$(audit_dir)"; }
 audit_lock_dir() { printf '%s/.audit.lock' "$(audit_dir)"; }
+audit_owner_pid() { printf '%s' "${BASHPID:-$$}"; }
 audit_proc_starttime() {
   local pid="$1"
   [[ -r "/proc/$pid/stat" ]] || return 1
@@ -25,7 +26,7 @@ audit_lock_is_stale() {
   [[ "$current" != "$start" ]]
 }
 audit_lock_reclaim() {
-  local lock="$(audit_lock_dir)" guard="$(audit_lock_dir).reclaim" stale="${lock}.stale.$$.$RANDOM" guard_created guard_now
+  local lock="$(audit_lock_dir)" guard="$(audit_lock_dir).reclaim" stale="${lock}.stale.$(audit_owner_pid).$RANDOM" guard_created guard_now
   if ! mkdir "$guard" 2>/dev/null; then
     guard_created="$(stat -c %Y "$guard" 2>/dev/null || true)"
     guard_now="$(date +%s)"
@@ -39,6 +40,7 @@ audit_lock_reclaim() {
   if audit_lock_is_stale; then
     if mv "$lock" "$stale" 2>/dev/null; then
       rm -rf "$stale"
+      rm -rf "$guard" 2>/dev/null || true
       return 0
     fi
   fi
@@ -46,13 +48,14 @@ audit_lock_reclaim() {
   return 1
 }
 audit_lock_acquire() {
-  local dir="$(audit_dir)" lock="$(audit_lock_dir)" now
+  local dir="$(audit_dir)" lock="$(audit_lock_dir)" now pid
   mkdir -p "$dir"
   for _ in {1..100}; do
     if mkdir "$lock" 2>/dev/null; then
       now="$(date +%s)"
-      printf '%s\n' "$$" >"$lock/pid"
-      printf '%s\n' "$(audit_proc_starttime "$$" 2>/dev/null || printf 0)" >"$lock/starttime"
+      pid="$(audit_owner_pid)"
+      printf '%s\n' "$pid" >"$lock/pid"
+      printf '%s\n' "$(audit_proc_starttime "$pid" 2>/dev/null || printf 0)" >"$lock/starttime"
       printf '%s\n' "$now" >"$lock/created"
       return 0
     fi
@@ -66,12 +69,13 @@ audit_lock_acquire() {
   return 1
 }
 audit_lock_release() {
-  local lock="$(audit_lock_dir)" pid start current
+  local lock="$(audit_lock_dir)" pid start current owner
   [[ -d "$lock" ]] || return 0
+  owner="$(audit_owner_pid)"
   pid="$(cat "$lock/pid" 2>/dev/null || true)"
   start="$(cat "$lock/starttime" 2>/dev/null || true)"
-  current="$(audit_proc_starttime "$$" 2>/dev/null || true)"
-  [[ "$pid" == "$$" && -n "$start" && "$start" == "$current" ]] || return 1
+  current="$(audit_proc_starttime "$owner" 2>/dev/null || true)"
+  [[ "$pid" == "$owner" && -n "$start" && "$start" == "$current" ]] || return 1
   rm -rf "$lock"
 }
 audit_append() {
