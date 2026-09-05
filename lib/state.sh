@@ -99,6 +99,26 @@ state_lifecycle_lock_release() {
   fi
 }
 
+state_cli_lifecycle_lock_maybe() {
+  local caller="$(basename "${BASH_SOURCE[1]:-}")" command="${1:-}" lifecycle_command=''
+  [[ "$caller" == 'proxy-ctl' ]] || return 0
+  case "$command" in
+    start|stop|restart|run) lifecycle_command="$command" ;;
+    --profile)
+      lifecycle_command="${3:-}"
+      ;;
+    *) return 0 ;;
+  esac
+  case "$lifecycle_command" in
+    start|stop|restart|run)
+      state_lifecycle_lock_acquire
+      trap 'state_lifecycle_lock_release' EXIT HUP INT TERM
+      ;;
+  esac
+}
+
+state_cli_lifecycle_lock_maybe "${1:-}"
+
 state_epoch() {
   local name="$1" value
   if [[ -r "$(state_marker "$name")" ]]; then
