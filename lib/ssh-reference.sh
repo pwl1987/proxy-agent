@@ -13,12 +13,15 @@ ssh_reference_resolve() {
 }
 
 ssh_identity_resolve() {
-  local ref="$1" path mode octal_mode
+  local ref="$1" path mode octal_mode owner current_uid
   path="$(ssh_reference_resolve "$ref")"
   mode="$(stat -c '%a' "$path" 2>/dev/null || true)"
+  owner="$(stat -c '%u' "$path" 2>/dev/null || true)"
+  current_uid="$(id -u)"
   [[ "$mode" =~ ^[0-7]{3,4}$ ]] || die "无法检查 SSH identity 权限: $path"
   octal_mode=$((8#$mode))
   (( (octal_mode & 0077) == 0 )) || die "SSH identity 权限过宽: $path"
+  [[ "$owner" =~ ^[0-9]+$ && "$owner" == "$current_uid" ]] || die "SSH identity 属主不是当前运行用户: $path"
   printf '%s' "$path"
 }
 
