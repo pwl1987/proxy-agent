@@ -59,6 +59,10 @@ done
 test "$(cat "$TMP/healthz.status" 2>/dev/null || true)" = 403 || { echo 'ACL deny readiness failed' >&2; cat "$LOG" >&2; cat "$TMP/healthz.body" >&2 || true; exit 1; }
 grep -q 'network_not_allowed' "$TMP/healthz.body"
 
+status="$(curl -sS -o "$TMP/blocked-method.body" -w '%{http_code}' -X DELETE "http://127.0.0.1:$PORT/api/v1/status")"
+test "$status" = 403
+grep -q 'network_not_allowed' "$TMP/blocked-method.body"
+
 kill "$GATEWAY_PID" 2>/dev/null || true
 wait "$GATEWAY_PID" 2>/dev/null || true
 GATEWAY_PID=''
