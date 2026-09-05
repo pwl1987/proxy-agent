@@ -65,26 +65,58 @@
 - Host/container networking deployment patterns ✅
 - Upgrade rollback verification and compatibility policy ✅
 
-## V3 control API — planned
-- Typed configuration schema
-- Local control API over Unix socket / loopback HTTP
-- Desired state vs observed state
-- Config revision and optimistic concurrency
-- Audit events
-- `proxy-ctl exec`
-- Capability-versioned backend metadata
-- TUI converted from CLI subprocess client to API client
+## V3 control API — completed / baseline
+- Typed configuration schema ✅
+- Local control API over Unix socket / loopback HTTP ✅
+- Desired state vs observed state ✅
+- Config revision and optimistic concurrency ✅
+- Audit events ✅
+- `proxy-ctl exec` ✅
+- Capability-versioned backend metadata ✅
+- TUI converted from CLI subprocess client to API client ✅
 
-## V4 Web control plane — planned
-- Chinese Web UI by default
-- Profile/backend/adapter forms driven by capability metadata
-- Draft → Validate → Diff → Apply workflow
-- Health dashboard and event history
-- Rollback to previous configuration revision
-- Logs and diagnostics viewer
-- Local-only binding by default
-- Explicitly enabled remote management with authentication
-- Secret references without exposing private keys in the UI
+## V4 Web control plane — historical direction
+The original roadmap treated Web control as a separate V4 track. The current plan supersedes that sequencing: Web/LAN work is now delivered incrementally inside the 0.5.x evolution line after the Egress Path foundation is stable.
+
+## 0.5.x — staged control/data-plane evolution
+
+0.5.x is intentionally split into independently testable releases. Do not require the entire feature set to land in 0.5.0.
+
+### 0.5.0 — Egress Path foundation
+- Canonical Egress Path data model and validation
+- Explicit `Backend` vs `Egress Path` responsibility boundary
+- Direct transport semantics
+- Backward-compatible reuse of existing backend configuration
+- Typed-config → legacy-runtime projection contract
+- Focused config/revision/reconcile smoke coverage
+
+### 0.5.1 — SSH Jump and identity/security foundations
+- One-hop SSH Jump Host transport
+- Separate Jump/Target identity references
+- Secret-reference lifecycle and validation
+- Host-key/known-host handling
+- Transport/Jump/Target health state
+- Explicit DNS path semantics with existing SSH SOCKS5 defaults preserved
+
+### 0.5.2 — Web/LAN Management Plane
+- Web Control Plane using the existing Control API
+- Authenticated HTTPS LAN management
+- Session/CSRF/rate-limit/ACL boundaries
+- Profile/backend/egress configuration UI
+- Validate → Diff → Apply workflow
+- Health/event/revision views
+
+### 0.5.3 — Recovery and operational completeness
+- Configuration/revision export/import
+- Validate-before-activation recovery
+- Richer diagnostics and event visibility
+- LAN deployment/integration coverage
+
+### 0.5.4+ — Advanced runtime capabilities
+- Connection draining behind an explicit backend capability
+- Multiple named Egress Paths and route selection
+- Future EgressGroup abstraction
+- Health-driven failover/balancing only after separate semantics and failure-policy design
 
 ## V5 Cross-platform — planned
 - macOS runtime adapter (`launchd`)
@@ -100,9 +132,11 @@
 - Metrics endpoint
 - Signed/provenance-backed release artifacts
 - SBOM and image attestation
-- Backup/restore and fleet-ready configuration export
+- Fleet-ready configuration export
 - Compatibility policy for old configuration revisions
 
 ## Architecture rule
 
 Do not continue adding large amounts of imperative behavior directly to `proxy-ctl`. Keep the current Shell implementation as the Linux reference implementation while introducing typed configuration and a local control API. Replace the implementation language only after the behavioral contract is frozen.
+
+The 0.5.x evolution must preserve the same principle: extend contracts and typed configuration first, reuse the existing revision/audit/reconcile/backend lifecycle machinery, and avoid creating parallel sources of truth or parallel state machines.
