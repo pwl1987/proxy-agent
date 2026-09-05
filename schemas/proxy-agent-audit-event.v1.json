@@ -7,7 +7,7 @@
   "required": ["schema_version", "event", "actor", "timestamp"],
   "properties": {
     "schema_version": {"type": "integer", "const": 1},
-    "event": {"type": "string", "enum": ["revision.created", "desired_state.activated", "desired_state.activation_failed", "rollback.activated", "rollback.activation_failed"]},
+    "event": {"type": "string", "enum": ["revision.created", "desired_state.activated", "desired_state.activation_failed", "rollback.activated", "rollback.activation_failed", "runtime.start", "runtime.stop", "runtime.restart", "runtime.test", "runtime.diagnose"]},
     "actor": {"type": "string", "minLength": 1},
     "timestamp": {"type": "integer", "minimum": 0},
     "revision": {"type": "integer", "minimum": 1},
