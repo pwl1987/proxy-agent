@@ -10,7 +10,7 @@ import subprocess
 import sys
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 
 try:
     import fcntl
@@ -33,9 +33,15 @@ def call_store(function: str, *args: str) -> str:
     return p.stdout.decode("utf-8")
 
 
-def run_proxy_ctl(config: Path, command: str) -> subprocess.CompletedProcess[str]:
+def run_proxy_ctl(config: Path, command: str, lock_fd: int | None = None) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["PA_CONFIG"] = str(config)
+    pass_fds: tuple[int, ...] = ()
+    if lock_fd is not None:
+        os.set_inheritable(lock_fd, True)
+        env["PA_LIFECYCLE_FD"] = str(lock_fd)
+        env["PA_LIFECYCLE_FD_INHERITED"] = "true"
+        pass_fds = (lock_fd,)
     return subprocess.run(
         [str(PROXY_CTL), command],
         cwd=ROOT,
@@ -44,6 +50,7 @@ def run_proxy_ctl(config: Path, command: str) -> subprocess.CompletedProcess[str
         stderr=subprocess.PIPE,
         text=True,
         check=False,
+        pass_fds=pass_fds,
     )
 
 
@@ -56,7 +63,7 @@ def atomic_write(path: Path, content: str, mode: int = 0o600) -> None:
 
 
 @contextmanager
-def lifecycle_lock(state_dir: Path):
+def lifecycle_lock(state_dir: Path) -> Iterator[int]:
     state_dir.mkdir(parents=True, exist_ok=True)
     lock_path = state_dir / ".lifecycle.lock"
     if fcntl is None:
@@ -64,8 +71,9 @@ def lifecycle_lock(state_dir: Path):
     with lock_path.open("a+b") as lock_file:
         os.chmod(lock_path, 0o600)
         fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        os.set_inheritable(lock_file.fileno(), True)
         try:
-            yield
+            yield lock_file.fileno()
         finally:
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
@@ -111,7 +119,7 @@ def runtime_requires_stop(config: Path) -> bool:
     return backend in {"ssh-socks", "sing-box", "mihomo"}
 
 
-def activate(candidate_config: Path, runtime_config: Path, desired_revision: int, state_path: Path) -> dict[str, object]:
+def activate(candidate_config: Path, runtime_config: Path, desired_revision: int, state_path: Path, lock_fd: int) -> dict[str, object]:
     backup = runtime_config.with_name(f".{runtime_config.name}.previous")
     had_previous = runtime_config.exists()
     previous_active = os.environ.get("PA_RUNTIME_ACTIVE_CONFIG", "")
@@ -122,7 +130,7 @@ def activate(candidate_config: Path, runtime_config: Path, desired_revision: int
         previous_source = backup
 
     if previous_source is not None and runtime_requires_stop(previous_source):
-        old_stop = run_proxy_ctl(previous_source, "stop")
+        old_stop = run_proxy_ctl(previous_source, "stop", lock_fd)
         if old_stop.returncode:
             if backup.exists():
                 backup.unlink()
@@ -131,14 +139,14 @@ def activate(candidate_config: Path, runtime_config: Path, desired_revision: int
     try:
         os.replace(candidate_config, runtime_config)
         candidate_config = runtime_config
-        candidate_start = run_proxy_ctl(runtime_config, "start")
+        candidate_start = run_proxy_ctl(runtime_config, "start", lock_fd)
         if candidate_start.returncode:
             raise RuntimeError(candidate_start.stderr.strip() or "candidate runtime activation failed")
     except Exception as exc:
         if had_previous and backup.exists():
             os.replace(backup, runtime_config)
             if runtime_requires_stop(runtime_config):
-                restored = run_proxy_ctl(runtime_config, "start")
+                restored = run_proxy_ctl(runtime_config, "start", lock_fd)
                 if restored.returncode:
                     raise RuntimeError(f"{exc}; rollback runtime start also failed") from exc
         elif runtime_config.exists():
@@ -170,7 +178,7 @@ def main() -> int:
     if profile and os.environ.get("PA_STATE_DIR_EXPLICIT", "false") != "true":
         state_dir = state_dir / profile
 
-    with lifecycle_lock(state_dir):
+    with lifecycle_lock(state_dir) as lock_fd:
         if args.bootstrap:
             bootstrap_desired()
 
@@ -207,7 +215,7 @@ def main() -> int:
             candidate_config = runtime_dir / f".proxy-agent.conf.candidate.{os.getpid()}"
             atomic_write(candidate_config, exporter.stdout)
             try:
-                result = activate(candidate_config, runtime_config, desired_revision, observed_state)
+                result = activate(candidate_config, runtime_config, desired_revision, observed_state, lock_fd)
             finally:
                 if candidate_config.exists():
                     candidate_config.unlink()
