@@ -5,9 +5,6 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-# This test exercises the rootless upgrade entrypoint with a fake installer/service.
-# The fake installer deliberately holds a critical-section directory so overlapping
-# upgrades fail; the shared lifecycle lock must serialize both invocations.
 WORK="$TMP/work"
 HOME_DIR="$TMP/home"
 CONFIG_HOME="$HOME_DIR/.config"
@@ -16,7 +13,7 @@ BIN="$HOME_DIR/.local/bin"
 TREE="$TMP/tree"
 STATE="$TMP/state"
 PATH_BIN="$TMP/bin"
-mkdir -p "$TREE/lib" "$TREE/bin" "$CONFIG_HOME/proxy-agent" "$PREFIX" "$BIN" "$STATE" "$PATH_BIN"
+mkdir -p "$WORK" "$TREE/lib" "$TREE/bin" "$CONFIG_HOME/proxy-agent" "$PREFIX" "$BIN" "$STATE" "$PATH_BIN"
 cp "$ROOT/upgrade-user.sh" "$TREE/upgrade-user.sh"
 cp "$ROOT/lib/state.sh" "$TREE/lib/state.sh"
 printf '0.4.0\n' >"$TREE/VERSION"
@@ -56,7 +53,7 @@ if ! mkdir "$active" 2>/dev/null; then
   exit 90
 fi
 trap 'rmdir "$active"' EXIT
-printf 'installed-%s\n' "$$" >"$TREE_INSTALL_SENTINEL.last"
+printf 'installed-%s\n' "$$" >>"$TREE_INSTALL_SENTINEL.log"
 sleep 0.25
 EOF
 chmod +x "$TREE/install-user.sh"
@@ -69,7 +66,6 @@ exit 0
 EOF
 chmod +x "$TREE/bin/proxy-ctl"
 
-# Neutralize host systemd so the smoke is deterministic and exercises file/state transaction only.
 cat >"$PATH_BIN/systemctl" <<'EOF'
 #!/usr/bin/env bash
 exit 1
@@ -86,25 +82,22 @@ export TREE_INSTALL_SENTINEL="$TMP/install-critical"
 export PATH="$PATH_BIN:$PATH"
 mkdir -p "$XDG_RUNTIME_DIR"
 
-# Seed the installed program with an old marker so rollback can be checked later.
 printf 'old-version\n' >"$PREFIX/marker"
 
-# Two concurrent upgrades must serialize on the same lifecycle lock.
 set +e
-( cd "$TREE" && ./upgrade-user.sh ) >"$WORK-a.log" 2>&1 &
+( cd "$TREE" && ./upgrade-user.sh ) >"$WORK/a.log" 2>&1 &
 pid_a=$!
 sleep 0.03
-( cd "$TREE" && ./upgrade-user.sh ) >"$WORK-b.log" 2>&1 &
+( cd "$TREE" && ./upgrade-user.sh ) >"$WORK/b.log" 2>&1 &
 pid_b=$!
 wait "$pid_a"; rc_a=$?
 wait "$pid_b"; rc_b=$?
 set -e
-(( rc_a == 0 )) || { cat "$WORK-a.log" >&2; exit 1; }
-(( rc_b == 0 )) || { cat "$WORK-b.log" >&2; exit 1; }
+(( rc_a == 0 )) || { cat "$WORK/a.log" >&2; exit 1; }
+(( rc_b == 0 )) || { cat "$WORK/b.log" >&2; exit 1; }
 [[ ! -d "$TREE_INSTALL_SENTINEL.active" ]]
-[[ "$(grep -c '^installed-' "$TREE_INSTALL_SENTINEL.last")" -eq 1 ]]
+[[ "$(wc -l <"$TREE_INSTALL_SENTINEL.log")" -eq 2 ]]
 
-# Rollback path: make the installer mutate the prefix and then fail validation.
 cat >"$TREE/install-user.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -120,8 +113,7 @@ set -e
 [[ "$(cat "$PREFIX/marker")" == 'old-version' ]]
 [[ -f "$CONFIG_HOME/proxy-agent/proxy-agent.conf" ]]
 
-# Static contract: both upgrade entrypoints must source and acquire the lifecycle lock.
 grep -q 'source "$ROOT/lib/state.sh"' "$TREE/upgrade-user.sh"
 grep -q 'state_lifecycle_lock_acquire' "$TREE/upgrade-user.sh"
 
-printf 'upgrade transaction smoke: PASS\n'
+echo 'upgrade transaction smoke: PASS'
