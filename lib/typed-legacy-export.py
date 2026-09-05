@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import shlex
 import sys
-from pathlib import Path
 from typing import Any
 
 
@@ -40,6 +39,15 @@ def validate_direct_egress(config: dict[str, Any], backend: dict[str, Any]) -> d
         return None
     if not isinstance(path, dict):
         raise ValueError("egress_path must be an object")
+    if set(path) != {"transport", "mode", "target"}:
+        unknown = sorted(set(path) - {"transport", "mode", "target"})
+        missing = sorted({"transport", "mode", "target"} - set(path))
+        details = []
+        if missing:
+            details.append(f"missing={','.join(missing)}")
+        if unknown:
+            details.append(f"unknown={','.join(unknown)}")
+        raise ValueError("egress_path fields are invalid: " + "; ".join(details))
     if path.get("transport") != "ssh":
         raise ValueError("egress_path.transport must be ssh in 0.5.0")
     if path.get("mode") != "direct":
@@ -47,9 +55,15 @@ def validate_direct_egress(config: dict[str, Any], backend: dict[str, Any]) -> d
     target = path.get("target")
     if not isinstance(target, dict):
         raise ValueError("egress_path.target must be an object")
-    for key in ("host", "user", "port"):
-        if key not in target:
-            raise ValueError(f"missing required field: egress_path.target.{key}")
+    if set(target) != {"host", "user", "port"}:
+        unknown = sorted(set(target) - {"host", "user", "port"})
+        missing = sorted({"host", "user", "port"} - set(target))
+        details = []
+        if missing:
+            details.append(f"missing={','.join(missing)}")
+        if unknown:
+            details.append(f"unknown={','.join(unknown)}")
+        raise ValueError("egress_path.target fields are invalid: " + "; ".join(details))
     host = target["host"]
     user = target["user"]
     port = target["port"]
