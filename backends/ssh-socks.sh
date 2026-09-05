@@ -2,6 +2,8 @@
 set -euo pipefail
 
 # SSH -> local SOCKS5 backend. Intended to be sourced by proxy-ctl.
+# shellcheck source=../lib/ssh-reference.sh
+source "$ROOT/lib/ssh-reference.sh"
 
 backend_ssh_socks_capability() {
   case "$1" in
@@ -15,9 +17,7 @@ backend_ssh_socks_capabilities() {
   printf '%s\n' socks5 dynamic_dns stream_proxy supports_egress_path supports_jump supports_remote_dns
 }
 
-backend_ssh_socks_pid_file() {
-  printf '%s/ssh-socks.pid' "$PA_STATE_DIR"
-}
+backend_ssh_socks_pid_file() { printf '%s/ssh-socks.pid' "$PA_STATE_DIR"; }
 
 backend_ssh_socks_endpoint() {
   if [[ "${SSH_DNS_MODE:-remote}" == local ]]; then
@@ -27,9 +27,7 @@ backend_ssh_socks_endpoint() {
   fi
 }
 
-backend_ssh_socks_managed() {
-  return 0
-}
+backend_ssh_socks_managed() { return 0; }
 
 backend_ssh_socks_pid() {
   local pid_file pid
@@ -37,12 +35,7 @@ backend_ssh_socks_pid() {
   [[ -r "$pid_file" ]] || return 1
   pid="$(cat "$pid_file" 2>/dev/null || true)"
   [[ "$pid" =~ ^[0-9]+$ && -d "/proc/$pid" ]] || { rm -f "$pid_file"; return 1; }
-  if backend_ssh_socks_process_matches "$pid"; then
-    printf '%s' "$pid"
-  else
-    rm -f "$pid_file"
-    return 1
-  fi
+  if backend_ssh_socks_process_matches "$pid"; then printf '%s' "$pid"; else rm -f "$pid_file"; return 1; fi
 }
 
 backend_ssh_socks_process_matches() {
@@ -56,14 +49,11 @@ backend_ssh_socks_process_matches() {
   else
     [[ "$cmdline" == *"${REMOTE_USER}@${REMOTE_HOST}"* ]] || return 1
   fi
-
   exe="$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)"
   [[ "$exe" == */autossh ]] || return 1
-
   process_uid="$(awk '/^Uid:/{print $2}' "/proc/$pid/status" 2>/dev/null || true)"
   current_uid="$(id -u)"
   [[ "$process_uid" == "$current_uid" ]] || return 1
-
   listener_owned "$SOCKS_BIND" "$SOCKS_PORT" "$pid"
 }
 
@@ -88,11 +78,8 @@ backend_ssh_socks_validate() {
   local key="$(expand_home "$REMOTE_SSH_KEY")"
   [[ -r "$key" ]] || die "SSH key not readable: $key"
   [[ "$SOCKS_BIND" != "0.0.0.0" ]] || warn "SOCKS_BIND=0.0.0.0 exposes the proxy; use loopback unless remote access is intentional"
-
   case "${SSH_EGRESS_MODE:-direct}" in
-    direct)
-      return 0
-      ;;
+    direct) return 0 ;;
     jump)
       : "${SSH_JUMP_HOST:?SSH_JUMP_HOST is required for jump mode}"
       : "${SSH_JUMP_USER:?SSH_JUMP_USER is required for jump mode}"
@@ -101,28 +88,22 @@ backend_ssh_socks_validate() {
       : "${SSH_JUMP_KNOWN_HOSTS:?SSH_JUMP_KNOWN_HOSTS is required for jump mode}"
       : "${SSH_TARGET_KEY:?SSH_TARGET_KEY is required for jump mode}"
       : "${SSH_TARGET_KNOWN_HOSTS:?SSH_TARGET_KNOWN_HOSTS is required for jump mode}"
-      [[ "$SSH_DNS_MODE" == local || "$SSH_DNS_MODE" == remote ]] || die "SSH_DNS_MODE must be local or remote"
-      ssh_identity_resolve "${REMOTE_SSH_KEY}" >/dev/null
-      ssh_identity_resolve "${SSH_JUMP_KEY}" >/dev/null
-      ssh_known_hosts_resolve "${SSH_TARGET_KNOWN_HOSTS}" >/dev/null
-      ssh_known_hosts_resolve "${SSH_JUMP_KNOWN_HOSTS}" >/dev/null
+      [[ "${SSH_DNS_MODE:-remote}" == local || "${SSH_DNS_MODE:-remote}" == remote ]] || die "SSH_DNS_MODE must be local or remote"
+      ssh_identity_resolve "$SSH_JUMP_KEY" >/dev/null
+      ssh_identity_resolve "$SSH_TARGET_KEY" >/dev/null
+      ssh_known_hosts_resolve "$SSH_JUMP_KNOWN_HOSTS" >/dev/null
+      ssh_known_hosts_resolve "$SSH_TARGET_KNOWN_HOSTS" >/dev/null
       ;;
-    *)
-      die "SSH_EGRESS_MODE must be direct or jump"
-      ;;
+    *) die "SSH_EGRESS_MODE must be direct or jump" ;;
   esac
 }
 
-backend_ssh_socks_runtime_ssh_config() {
-  printf '%s/ssh-socks-runtime.conf' "$PA_STATE_DIR"
-}
+backend_ssh_socks_runtime_ssh_config() { printf '%s/ssh-socks-runtime.conf' "$PA_STATE_DIR"; }
 
 backend_ssh_socks_write_jump_config() {
   local file="$1" jump_key jump_known target_key target_known tmp
-  jump_key="$(ssh_identity_resolve "$SSH_JUMP_KEY")"
-  jump_known="$(ssh_known_hosts_resolve "$SSH_JUMP_KNOWN_HOSTS")"
-  target_key="$(ssh_identity_resolve "$SSH_TARGET_KEY")"
-  target_known="$(ssh_known_hosts_resolve "$SSH_TARGET_KNOWN_HOSTS")"
+  jump_key="$(ssh_identity_resolve "$SSH_JUMP_KEY")"; jump_known="$(ssh_known_hosts_resolve "$SSH_JUMP_KNOWN_HOSTS")"
+  target_key="$(ssh_identity_resolve "$SSH_TARGET_KEY")"; target_known="$(ssh_known_hosts_resolve "$SSH_TARGET_KNOWN_HOSTS")"
   tmp="${file}.tmp.$$"
   cat >"$tmp" <<EOF
 Host __proxy_agent_jump
@@ -144,61 +125,37 @@ Host __proxy_agent_target
   IdentitiesOnly yes
   ProxyJump __proxy_agent_jump
 EOF
-  chmod 0600 "$tmp"
-  mv -f "$tmp" "$file"
+  chmod 0600 "$tmp"; mv -f "$tmp" "$file"
 }
 
 backend_ssh_socks_start() {
   backend_ssh_socks_validate
   mkdir -p "$PA_STATE_DIR" "$PA_LOG_DIR"
-
   local existing_pid pid_file key pid ssh_config
   pid_file="$(backend_ssh_socks_pid_file)"
   existing_pid="$(backend_ssh_socks_pid 2>/dev/null || true)"
-  if [[ -n "$existing_pid" ]]; then
-    return 0
-  fi
+  [[ -n "$existing_pid" ]] && return 0
   rm -f "$pid_file"
-  if port_listening "$SOCKS_PORT"; then
-    die "SOCKS port ${SOCKS_BIND}:${SOCKS_PORT} is already listening and is not owned by this profile"
-  fi
+  if port_listening "$SOCKS_PORT"; then die "SOCKS port ${SOCKS_BIND}:${SOCKS_PORT} is already listening and is not owned by this profile"; fi
 
   if [[ "${SSH_EGRESS_MODE:-direct}" == jump ]]; then
     ssh_config="$(backend_ssh_socks_runtime_ssh_config)"
     backend_ssh_socks_write_jump_config "$ssh_config"
-    key=""
-  else
-    rm -f "$(backend_ssh_socks_runtime_ssh_config)"
-    key="$(expand_home "$REMOTE_SSH_KEY")"
-  fi
-
-  if [[ "${SSH_EGRESS_MODE:-direct}" == jump ]]; then
-    AUTOSSH_GATETIME=0 autossh -N \
-      -M "${AUTOSSH_MONITOR_PORT:-0}" -F "$ssh_config" \
-      -o BatchMode=yes -o ExitOnForwardFailure=yes \
+    AUTOSSH_GATETIME=0 autossh -N -M "${AUTOSSH_MONITOR_PORT:-0}" -F "$ssh_config" -o BatchMode=yes -o ExitOnForwardFailure=yes \
       -o ServerAliveInterval="${SSH_SERVER_ALIVE_INTERVAL:-30}" -o ServerAliveCountMax="${SSH_SERVER_ALIVE_COUNT_MAX:-3}" \
       -D "${SOCKS_BIND}:${SOCKS_PORT}" __proxy_agent_target >>"$PA_LOG_DIR/ssh-socks.log" 2>&1 &
   else
-    AUTOSSH_GATETIME=0 autossh -N \
-      -M "${AUTOSSH_MONITOR_PORT:-0}" -o BatchMode=yes -o ExitOnForwardFailure=yes \
+    rm -f "$(backend_ssh_socks_runtime_ssh_config)"
+    key="$(expand_home "$REMOTE_SSH_KEY")"
+    AUTOSSH_GATETIME=0 autossh -N -M "${AUTOSSH_MONITOR_PORT:-0}" -o BatchMode=yes -o ExitOnForwardFailure=yes \
       -o ServerAliveInterval="${SSH_SERVER_ALIVE_INTERVAL:-30}" -o ServerAliveCountMax="${SSH_SERVER_ALIVE_COUNT_MAX:-3}" \
-      -o StrictHostKeyChecking="${SSH_STRICT_HOST_KEY_CHECKING:-yes}" \
-      -o UserKnownHostsFile="$(expand_home "${SSH_KNOWN_HOSTS:-$HOME/.ssh/known_hosts}")" \
-      -i "$key" -p "${REMOTE_PORT:-22}" -D "${SOCKS_BIND}:${SOCKS_PORT}" \
-      "${REMOTE_USER}@${REMOTE_HOST}" >>"$PA_LOG_DIR/ssh-socks.log" 2>&1 &
+      -o StrictHostKeyChecking="${SSH_STRICT_HOST_KEY_CHECKING:-yes}" -o UserKnownHostsFile="$(expand_home "${SSH_KNOWN_HOSTS:-$HOME/.ssh/known_hosts}")" \
+      -i "$key" -p "${REMOTE_PORT:-22}" -D "${SOCKS_BIND}:${SOCKS_PORT}" "${REMOTE_USER}@${REMOTE_HOST}" >>"$PA_LOG_DIR/ssh-socks.log" 2>&1 &
   fi
-  pid=$!
-  echo "$pid" >"$pid_file"
-
+  pid=$!; echo "$pid" >"$pid_file"
   for _ in {1..20}; do
-    if backend_ssh_socks_liveness; then
-      return 0
-    fi
-    if ! kill -0 "$pid" 2>/dev/null; then
-      rm -f "$pid_file"
-      rm -f "$(backend_ssh_socks_runtime_ssh_config)"
-      die 'AutoSSH exited before establishing the SOCKS listener'
-    fi
+    if backend_ssh_socks_liveness; then return 0; fi
+    if ! kill -0 "$pid" 2>/dev/null; then rm -f "$pid_file"; rm -f "$(backend_ssh_socks_runtime_ssh_config)"; die 'AutoSSH exited before establishing the SOCKS listener'; fi
     sleep 0.25
   done
   backend_ssh_socks_stop
@@ -210,11 +167,7 @@ backend_ssh_socks_stop() {
   pid_file="$(backend_ssh_socks_pid_file)"
   pid="$(backend_ssh_socks_pid 2>/dev/null || true)"
   rm -f "$pid_file"
-  [[ -n "$pid" ]] || {
-    port_listening "$SOCKS_PORT" && warn "SOCKS port ${SOCKS_BIND}:${SOCKS_PORT} is listening but is not owned by this profile; refusing to kill it"
-    rm -f "$(backend_ssh_socks_runtime_ssh_config)"
-    return 0
-  }
+  [[ -n "$pid" ]] || { port_listening "$SOCKS_PORT" && warn "SOCKS port ${SOCKS_BIND}:${SOCKS_PORT} is listening but is not owned by this profile; refusing to kill it"; rm -f "$(backend_ssh_socks_runtime_ssh_config)"; return 0; }
   kill "$pid" 2>/dev/null || true
   for _ in {1..20}; do
     kill -0 "$pid" 2>/dev/null || { rm -f "$(backend_ssh_socks_runtime_ssh_config)"; return 0; }
@@ -225,12 +178,7 @@ backend_ssh_socks_stop() {
 }
 
 backend_ssh_socks_liveness() {
-  local pid
-  pid="$(backend_ssh_socks_pid 2>/dev/null || true)"
-  [[ -n "$pid" ]] || return 1
-  listener_owned "$SOCKS_BIND" "$SOCKS_PORT" "$pid"
+  local pid; pid="$(backend_ssh_socks_pid 2>/dev/null || true)"; [[ -n "$pid" ]] || return 1; listener_owned "$SOCKS_BIND" "$SOCKS_PORT" "$pid"
 }
 
-backend_ssh_socks_status() {
-  backend_ssh_socks_liveness
-}
+backend_ssh_socks_status() { backend_ssh_socks_liveness; }
