@@ -1,0 +1,23 @@
+name: Upgrade Transaction Gate
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  upgrade-transaction:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Normalize executable permissions
+        run: |
+          chmod 0755 upgrade.sh upgrade-user.sh tests/upgrade-transaction-smoke.sh
+          chmod 0755 bin/* lib/*.sh
+      - name: Shell syntax
+        run: |
+          bash -n upgrade.sh
+          bash -n upgrade-user.sh
+          bash -n tests/upgrade-transaction-smoke.sh
+      - name: Upgrade transaction smoke
+        run: bash tests/upgrade-transaction-smoke.sh
