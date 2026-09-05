@@ -93,7 +93,7 @@ Path Health smoke、Functional、ShellCheck、Upgrade Transaction Gate 以及既
 - Gateway 通过 Unix socket 调用现有 Control API v1，不直接拥有 revision/audit/runtime/reconcile 状态。
 - 已有 read-only GET facade、`no-store` 响应与 mutation route allowlist。
 
-### 本阶段已落地：Session / CSRF / Login Rate Limit
+### 已落地：Session / CSRF / Login Rate Limit
 
 - admin token file 作为 bootstrap credential。
 - 登录成功生成随机 session id + CSRF token。
@@ -104,19 +104,36 @@ Path Health smoke、Functional、ShellCheck、Upgrade Transaction Gate 以及既
 - Web POST 已接到既有 Control API v1 的 validate/revisions/apply/rollback/runtime 路由，不复制其 validation、revision、audit、activation、reconcile 逻辑。
 - `tests/web-gateway-smoke.sh` 覆盖 session、CSRF、rate limit、control proxy、TLS listener boundary、logout 与安全方法边界。
 
-### 关键调用链
+### 已落地：Configuration Management UI
+
+- 新增 `web/index.html`，提供 authenticated typed configuration editor。
+- 新增 `bin/proxy-agent-web-ui`，复用现有 Gateway 的 session、CSRF、rate-limit 与 Unix-socket Control API 边界。
+- 页面支持 profile 参数、runtime/health/revision 概览、typed JSON 编辑、Validation、结构化 Diff、Revision 创建与 Apply。
+- `create revision` 使用 `if_match_revision`，并发变化由 Control API 返回 409；UI 不实现第二套 revision head。
+- Apply 使用新建 revision 作为 optimistic-concurrency 边界，并继续委托既有 reconcile。
+- `Containerfile` 显式打包 `web/`。
+- CI 增加 Web UI syntax check 与 `tests/web-ui-smoke.sh`。
+
+### UI 调用链与状态边界
 
 ```text
 Browser
-  -> Web Gateway session/auth/CSRF/rate-limit
+  -> Web UI
+  -> session / CSRF
+  -> Web Gateway
   -> Unix socket
   -> Control API v1
-  -> validation / revision / audit / reconcile / runtime
+  -> validate
+  -> revision store / audit
+  -> reconcile / desired-observed
+  -> runtime / health
 ```
+
+UI 仅维护页面生命周期内的 `loadedConfig`、`baseRevision`、`pendingRevision` 与最后一次 validated candidate；权威状态继续由现有 Control API / revision / reconcile / runtime 层拥有。
 
 ### 当前非目标
 
-RBAC、多租户、持久 session store、独立 ACL engine 以及 profile/backend/egress UI 尚未作为完成项记录；下一 slice 应继续建立在现有 Control API 权威边界之上。
+RBAC、多租户、持久 session store、独立 ACL engine、丰富 Profile/Backend/Egress 表单组件仍未完成。后续切片继续复用这一安全边界与 Control API 权威状态。
 
 ## 发布治理变更
 
