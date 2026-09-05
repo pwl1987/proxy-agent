@@ -22,7 +22,40 @@ if python3 "$GATEWAY" --listen 0.0.0.0 --port "$PORT" --admin-token-file "$TOKEN
 fi
 grep -q 'non-loopback management listener requires' "$LOG" || { cat "$LOG" >&2; exit 1; }
 
+if python3 "$GATEWAY" --listen 127.0.0.1 --port "$PORT" --admin-token-file "$TOKEN_FILE" --allow-cidr 'not-a-cidr' >"$LOG" 2>&1; then
+  echo "expected invalid management ACL CIDR to fail" >&2
+  exit 1
+fi
+grep -q 'invalid management ACL CIDR' "$LOG" || { cat "$LOG" >&2; exit 1; }
+
 python3 "$GATEWAY" \
+  --listen 127.0.0.1 \
+  --port "$PORT" \
+  --control-socket "$TMP/missing-control.sock" \
+  --admin-token-file "$TOKEN_FILE" \
+  --allow-cidr '192.0.2.0/24' >"$LOG" 2>&1 &
+GATEWAY_PID=$!
+
+for _ in {1..30}; do
+  if ! kill -0 "$GATEWAY_PID" 2>/dev/null; then
+    echo 'Web UI process exited before readiness:' >&2
+    cat "$LOG" >&2
+    exit 1
+  fi
+  if curl -sS "http://127.0.0.1:$PORT/healthz" -o "$TMP/healthz.body" -w '%{http_code}' >"$TMP/healthz.status" 2>/dev/null; then
+    if grep -q '^403$' "$TMP/healthz.status"; then break; fi
+  fi
+  sleep 0.1
+done
+
+test "$(cat "$TMP/healthz.status" 2>/dev/null || true)" = 403 || { echo 'ACL deny readiness failed' >&2; cat "$LOG" >&2; cat "$TMP/healthz.body" >&2 || true; exit 1; }
+grep -q 'network_not_allowed' "$TMP/healthz.body"
+
+kill "$GATEWAY_PID" 2>/dev/null || true
+wait "$GATEWAY_PID" 2>/dev/null || true
+GATEWAY_PID=''
+
+PA_WEB_ALLOW_CIDRS='127.0.0.1/32' python3 "$GATEWAY" \
   --listen 127.0.0.1 \
   --port "$PORT" \
   --control-socket "$TMP/missing-control.sock" \
@@ -43,6 +76,7 @@ done
 
 test "$(cat "$TMP/healthz.status" 2>/dev/null || true)" = 200 || { echo 'healthz readiness failed' >&2; cat "$LOG" >&2; cat "$TMP/healthz.body" >&2 || true; exit 1; }
 grep -q '"status":"ok"' "$TMP/healthz.body"
+grep -q 'acl=127.0.0.1/32' "$LOG"
 
 status="$(curl -sS -D "$TMP/ui.headers" -o "$TMP/ui.html" -w '%{http_code}' "http://127.0.0.1:$PORT/" || true)"
 echo "ui_http_status=$status"
@@ -79,4 +113,4 @@ status="$(curl -sS -o "$TMP/status.body" -w '%{http_code}' -b "$COOKIE_JAR" \
 test "$status" = 502 || { cat "$TMP/status.body" >&2; exit 1; }
 grep -q 'control_api_unavailable' "$TMP/status.body"
 
-echo 'PASS: web UI structured configuration and gateway integration smoke'
+echo 'PASS: web UI structured configuration, management ACL and gateway integration smoke'
