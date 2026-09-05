@@ -70,7 +70,7 @@ jobs:
           echo "tag=$IMAGE_TAG"
           docker build --pull -f Containerfile -t "$IMAGE_NAME:$IMAGE_TAG" -t "$IMAGE_NAME:latest" .
           docker image inspect "$IMAGE_NAME:$IMAGE_TAG" >/dev/null
-          docker image inspect --format='image_id={{.Id}}\ncreated={{.Created}}\nrepo_tags={{join .RepoTags ","}}' "$IMAGE_NAME:$IMAGE_TAG"
+          docker image inspect --format='image_id={{.Id}}\ncreated={{.Created}}\nrepo_tags={{json .RepoTags}}' "$IMAGE_NAME:$IMAGE_TAG"
           echo 'container_build=passed'
 
       - name: Login to GHCR
