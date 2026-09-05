@@ -52,7 +52,15 @@ grep -q '校验.*Diff' "$TMP/ui.html"
 grep -q '/api/v1/validate' "$TMP/ui.html"
 grep -q '/api/v1/revisions' "$TMP/ui.html"
 grep -q '/api/v1/apply' "$TMP/ui.html"
+grep -q 'config-form.js' "$TMP/ui.html"
 grep -qi 'Cache-Control: no-store' "$TMP/ui.headers"
+
+status="$(curl -sS -D "$TMP/js.headers" -o "$TMP/config-form.js" -w '%{http_code}' "http://127.0.0.1:$PORT/config-form.js" || true)"
+test "$status" = 200 || { cat "$LOG" >&2; cat "$TMP/config-form.js" >&2 || true; exit 1; }
+grep -q 'structured-config' "$TMP/config-form.js"
+grep -q 'ssh-socks' "$TMP/config-form.js"
+grep -q 'egress_path' "$TMP/config-form.js"
+grep -qi 'no-store' "$TMP/js.headers"
 
 status="$(curl -sS -D "$TMP/login.headers" -o "$TMP/login.body" -w '%{http_code}' \
   -c "$COOKIE_JAR" \
@@ -71,4 +79,4 @@ status="$(curl -sS -o "$TMP/status.body" -w '%{http_code}' -b "$COOKIE_JAR" \
 test "$status" = 502 || { cat "$TMP/status.body" >&2; exit 1; }
 grep -q 'control_api_unavailable' "$TMP/status.body"
 
-echo 'PASS: web UI config editor and gateway integration smoke'
+echo 'PASS: web UI structured configuration and gateway integration smoke'
