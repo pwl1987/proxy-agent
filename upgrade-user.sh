@@ -14,6 +14,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ -f "$ROOT/install-user.sh" ]] || { echo 'upgrade-user.sh 必须从 proxy-agent 源码目录运行' >&2; exit 1; }
 [[ -f "$ETC/proxy-agent.conf" ]] || { echo "未找到配置文件：$ETC/proxy-agent.conf" >&2; exit 1; }
 
+was_active=false
+if command -v systemctl >/dev/null 2>&1 && systemctl --user is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+  was_active=true
+  # proxy-ctl run owns the lifecycle lock for the lifetime of the user service.
+  # Ask systemd to terminate that owner before taking the transaction lock.
+  systemctl --user stop "$SERVICE_NAME"
+fi
+
 # Match proxy-ctl's rootless default runtime state directory.
 PA_STATE_DIR="${PA_STATE_DIR:-${XDG_RUNTIME_DIR:-$HOME/.cache/proxy-agent}/run}"
 # shellcheck disable=SC1091
@@ -21,11 +29,6 @@ source "$ROOT/lib/state.sh"
 state_lifecycle_lock_acquire
 release_lifecycle_lock() { state_lifecycle_lock_release; }
 cleanup_lifecycle() { release_lifecycle_lock; cleanup_backup; }
-
-was_active=false
-if command -v systemctl >/dev/null 2>&1 && systemctl --user is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-  was_active=true
-fi
 
 backup_root="$(mktemp -d "${TMPDIR:-/tmp}/proxy-agent-user-upgrade.XXXXXX")"
 cleanup_backup() { rm -rf -- "$backup_root"; }
@@ -68,10 +71,6 @@ restore_previous() {
   fi
   printf '已恢复上一版本的程序、配置、Profile 和用户 systemd 单元；请检查升级日志后再重试。\n' >&2
 }
-
-if $was_active; then
-  systemctl --user stop "$SERVICE_NAME"
-fi
 
 set +e
 PREFIX="$PREFIX" BIN="$BIN" XDG_CONFIG_HOME="$CONFIG_HOME" bash "$ROOT/install-user.sh"
