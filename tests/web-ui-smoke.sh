@@ -99,6 +99,7 @@ grep -q '/api/v1/validate' "$TMP/ui.html"
 grep -q '/api/v1/revisions' "$TMP/ui.html"
 grep -q '/api/v1/apply' "$TMP/ui.html"
 grep -q 'config-form.js' "$TMP/ui.html"
+grep -q 'profile-selector.js' "$TMP/ui.html"
 grep -qi 'Cache-Control: no-store' "$TMP/ui.headers"
 
 status="$(curl -sS -D "$TMP/js.headers" -o "$TMP/config-form.js" -w '%{http_code}' "http://127.0.0.1:$PORT/config-form.js" || true)"
@@ -107,6 +108,13 @@ grep -q 'structured-config' "$TMP/config-form.js"
 grep -q 'ssh-socks' "$TMP/config-form.js"
 grep -q 'egress_path' "$TMP/config-form.js"
 grep -qi 'no-store' "$TMP/js.headers"
+
+status="$(curl -sS -D "$TMP/profile-js.headers" -o "$TMP/profile-selector.js" -w '%{http_code}' "http://127.0.0.1:$PORT/profile-selector.js" || true)"
+test "$status" = 200 || { cat "$LOG" >&2; cat "$TMP/profile-selector.js" >&2 || true; exit 1; }
+grep -q 'loadProfiles' "$TMP/profile-selector.js"
+grep -q '/api/v1/profiles' "$TMP/profile-selector.js"
+grep -q 'profileSelectorBound' "$TMP/profile-selector.js"
+grep -qi 'no-store' "$TMP/profile-js.headers"
 
 status="$(curl -sS -D "$TMP/login.headers" -o "$TMP/login.body" -w '%{http_code}' \
   -c "$COOKIE_JAR" \
