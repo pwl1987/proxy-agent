@@ -53,4 +53,9 @@ code="$(validate "$TMP/unused" "$TMP/invalid.json" "$invalid")"
 [[ "$code" == 422 ]]
 grep -q 'invalid_config' "$TMP/invalid.json"
 
+credentialed='{"config":{"schema_version":1,"backend":{"type":"http-connect","options":{"proxy_url":"http://user:password@127.0.0.1:3128"}},"listeners":{"socks5":{"bind":"127.0.0.1","port":1080},"http":{"enabled":false,"bind":"127.0.0.1","port":8118}},"routing":{"direct_cidrs":[],"direct_domains":[],"no_proxy_extra":[],"rules":[]},"health":{"network_required":false,"timeout":10,"retries":1,"backoff":1,"auto_recover":true,"targets":[]},"integrations":{"git":false,"docker":false,"pip":false,"npm":false},"security":{"ssh_host_key_checking":"yes","allow_public_listener":false}}}'
+code="$(validate "$TMP/unused" "$TMP/credentialed.json" "$credentialed")"
+[[ "$code" == 422 ]]
+grep -q 'invalid_config' "$TMP/credentialed.json"
+
 echo 'control API validation smoke: PASS'
