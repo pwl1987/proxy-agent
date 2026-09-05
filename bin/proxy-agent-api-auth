@@ -1,0 +1,125 @@
+#!/usr/bin/env python3
+"""0.5.2 Control API compatibility wrapper for Web authentication audit events."""
+from __future__ import annotations
+
+import argparse
+import importlib.machinery
+import importlib.util
+import json
+import os
+import stat
+import socketserver
+import sys
+import time
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler
+from pathlib import Path
+from urllib.parse import urlsplit
+
+ROOT = Path(__file__).resolve().parent.parent
+CORE_PATH = Path(__file__).resolve().with_name("proxy-agent-api")
+ALLOWED_EVENTS = {"login.failure", "login.rate_limited", "login.success", "logout"}
+MAX_EVENT_REASON = 64
+MAX_PEER = 255
+
+
+def load_core():
+    loader = importlib.machinery.SourceFileLoader("proxy_agent_api_core", str(CORE_PATH))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    if spec is None:
+        raise RuntimeError("unable to load Control API core")
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+core = load_core()
+
+
+class AuthEventHandler(core.ControlRequestHandler):
+    def do_POST(self) -> None:
+        if urlsplit(self.path).path != "/api/v1/auth-events":
+            super().do_POST()
+            return
+        try:
+            body = self._read_json_body()
+            self._record_auth_event(body)
+        except json.JSONDecodeError as exc:
+            self._send(HTTPStatus.BAD_REQUEST, core.error_envelope("invalid_json", str(exc)))
+        except ValueError as exc:
+            self._send(HTTPStatus.BAD_REQUEST, core.error_envelope("invalid_request", str(exc)))
+        except Exception as exc:
+            self._send(HTTPStatus.INTERNAL_SERVER_ERROR, core.error_envelope("internal_error", str(exc)))
+
+    def _record_auth_event(self, body) -> None:
+        if not isinstance(body, dict):
+            raise ValueError("body must be an object")
+        event = body.get("event")
+        if event not in ALLOWED_EVENTS:
+            raise ValueError("unsupported auth event")
+        peer = str(body.get("peer") or "unknown")
+        if not peer or len(peer) > MAX_PEER:
+            raise ValueError("peer is invalid")
+        status = str(body.get("status") or ("blocked" if event == "login.rate_limited" else "failed" if event == "login.failure" else "succeeded"))
+        if status not in {"failed", "blocked", "succeeded"}:
+            raise ValueError("status is invalid")
+        reason = body.get("reason")
+        if reason is not None:
+            reason = str(reason)
+            if len(reason) > MAX_EVENT_REASON:
+                raise ValueError("reason is too long")
+        profile = self._profile_from_body(body)
+        record = {
+            "schema_version": 1,
+            "event": event,
+            "actor": "web-gateway",
+            "timestamp": int(body.get("timestamp") or time.time()),
+            "status": status,
+            "peer": peer,
+        }
+        if profile:
+            record["profile"] = profile
+        if reason:
+            record["reason"] = reason
+        core.safe_audit(profile, record)
+        self._send(HTTPStatus.ACCEPTED, core.response_envelope("auth_event", {"accepted": True, "event": event}))
+
+
+class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="local Control API v1 with Web auth-event audit support")
+    parser.add_argument("--socket", default=os.environ.get("PA_API_SOCKET", "/run/proxy-agent/control.sock"))
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    socket_path = Path(args.socket)
+    socket_path.parent.mkdir(parents=True, exist_ok=True)
+    if socket_path.exists():
+        if not stat.S_ISSOCK(socket_path.stat().st_mode):
+            print(f"refusing to replace non-socket path: {socket_path}", file=sys.stderr)
+            return 2
+        socket_path.unlink()
+    server = UnixHTTPServer(str(socket_path), AuthEventHandler)
+    os.chmod(socket_path, 0o600)
+    print(f"control-api auth wrapper listening on {socket_path}", file=sys.stderr)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+        try:
+            socket_path.unlink()
+        except FileNotFoundError:
+            pass
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
