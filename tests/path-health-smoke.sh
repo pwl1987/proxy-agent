@@ -48,12 +48,12 @@ export FAKE_TARGET_RC
 python3 - "$(backend_ssh_socks_health_detail)" <<'PY'
 import json, sys
 x=json.loads(sys.argv[1])
-assert x["overall_status"] == "failed"
-assert x["transport_status"] == "failed"
-assert x["jump_status"] == "not_applicable"
-assert x["target_status"] == "failed"
-assert x["reason"] == "target_unreachable"
-assert isinstance(x["last_checked"], int)
+assert x["overall_status"] == "failed", x
+assert x["transport_status"] == "failed", x
+assert x["jump_status"] == "not_applicable", x
+assert x["target_status"] == "failed", x
+assert x["reason"] == "target_unreachable", x
+assert isinstance(x["last_checked"], int), x
 PY
 
 FAKE_TARGET_RC=0
@@ -61,11 +61,11 @@ export FAKE_TARGET_RC
 python3 - "$(backend_ssh_socks_health_detail)" <<'PY'
 import json, sys
 x=json.loads(sys.argv[1])
-assert x["overall_status"] == "failed"
-assert x["transport_status"] == "ready"
-assert x["target_status"] == "ready"
-assert x["proxy_status"] == "failed"
-assert x["reason"] == "proxy_listener_unavailable"
+assert x["overall_status"] == "failed", x
+assert x["transport_status"] == "ready", x
+assert x["target_status"] == "ready", x
+assert x["proxy_status"] == "failed", x
+assert x["reason"] == "proxy_listener_unavailable", x
 PY
 
 export SSH_EGRESS_MODE="jump"
@@ -84,11 +84,11 @@ export FAKE_JUMP_RC FAKE_TARGET_RC
 python3 - "$(backend_ssh_socks_health_detail)" <<'PY'
 import json, sys
 x=json.loads(sys.argv[1])
-assert x["overall_status"] == "failed"
-assert x["transport_status"] == "failed"
-assert x["jump_status"] == "failed"
-assert x["target_status"] == "unknown"
-assert x["reason"] == "jump_unreachable"
+assert x["overall_status"] == "failed", x
+assert x["transport_status"] == "failed", x
+assert x["jump_status"] == "failed", x
+assert x["target_status"] == "unknown", x
+assert x["reason"] == "jump_unreachable", x
 PY
 
 FAKE_JUMP_RC=0
@@ -97,11 +97,11 @@ export FAKE_JUMP_RC FAKE_TARGET_RC
 python3 - "$(backend_ssh_socks_health_detail)" <<'PY'
 import json, sys
 x=json.loads(sys.argv[1])
-assert x["overall_status"] == "failed"
-assert x["transport_status"] == "ready"
-assert x["jump_status"] == "ready"
-assert x["target_status"] == "failed"
-assert x["reason"] == "target_unreachable"
+assert x["overall_status"] == "failed", x
+assert x["transport_status"] == "ready", x
+assert x["jump_status"] == "ready", x
+assert x["target_status"] == "failed", x
+assert x["reason"] == "target_unreachable", x
 PY
 
 FAKE_TARGET_RC=0
@@ -110,12 +110,12 @@ backend_ssh_socks_liveness() { return 0; }
 python3 - "$(backend_ssh_socks_health_detail)" <<'PY'
 import json, sys
 x=json.loads(sys.argv[1])
-assert x["overall_status"] == "ready"
-assert x["transport_status"] == "ready"
-assert x["jump_status"] == "ready"
-assert x["target_status"] == "ready"
-assert x["proxy_status"] == "ready"
-assert x["reason"] == "ssh_jump_path_established"
+assert x["overall_status"] == "ready", x
+assert x["transport_status"] == "ready", x
+assert x["jump_status"] == "ready", x
+assert x["target_status"] == "ready", x
+assert x["proxy_status"] == "ready", x
+assert x["reason"] == "ssh_jump_path_established", x
 PY
 
 source "$ROOT/lib/state.sh"
@@ -131,10 +131,10 @@ python3 - "$PA_STATE_DIR/runtime.json" <<'PY'
 import json, sys
 from pathlib import Path
 x=json.loads(Path(sys.argv[1]).read_text())
-assert x["schema_version"] == 2
-assert x["health"]["path"]["overall_status"] == "ready"
-assert x["health"]["path"]["jump_status"] == "ready"
-assert x["health"]["path"]["reason"] == "ssh_jump_path_established"
+assert x["schema_version"] == 2, x
+assert x["health"]["path"]["overall_status"] == "ready", x
+assert x["health"]["path"]["jump_status"] == "ready", x
+assert x["health"]["path"]["reason"] == "ssh_jump_path_established", x
 PY
 
 echo 'path health smoke: PASS'
