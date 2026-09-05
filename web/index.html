@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>proxy-agent · 0.5.2 Web Management</title>
+  <style>
+    :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { margin: 0; background: #111827; color: #f3f4f6; }
+    main { max-width: 1180px; margin: 0 auto; padding: 24px; }
+    header { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 18px; }
+    h1 { margin: 0; font-size: 22px; }
+    .muted { color: #9ca3af; font-size: 13px; }
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 12px 0; }
+    .card { background: #1f2937; border: 1px solid #374151; border-radius: 10px; padding: 14px; }
+    .wide { grid-column: 1 / -1; }
+    label { display: block; font-size: 12px; color: #9ca3af; margin-bottom: 6px; }
+    input, textarea, button { width: 100%; box-sizing: border-box; border-radius: 8px; border: 1px solid #4b5563; background: #111827; color: #f9fafb; padding: 9px 10px; }
+    textarea { min-height: 360px; resize: vertical; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    button { cursor: pointer; background: #2563eb; border-color: #2563eb; font-weight: 600; }
+    button.secondary { background: #374151; border-color: #4b5563; }
+    button.danger { background: #991b1b; border-color: #991b1b; }
+    .row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+    .status { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+    .ok { color: #86efac; }
+    .warn { color: #fcd34d; }
+    .error { color: #fca5a5; }
+    .hidden { display: none !important; }
+    .diff-item { padding: 4px 0; border-bottom: 1px solid #374151; }
+    .diff-added { color: #86efac; }
+    .diff-removed { color: #fca5a5; }
+    .diff-changed { color: #fde68a; }
+    @media (max-width: 820px) { .grid, .row { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>proxy-agent · Web Management</h1>
+      <div class="muted">0.5.2 · Control API v1 authoritative · validate → diff → revision → apply</div>
+    </div>
+    <button id="logout" class="danger hidden" style="width:auto">退出</button>
+  </header>
+
+  <section id="login" class="card">
+    <h2>管理员登录</h2>
+    <p class="muted">使用已配置的 admin token 建立短期 Web session。Token 不会被保存到浏览器。</p>
+    <label for="token">Admin token</label>
+    <input id="token" type="password" autocomplete="current-password">
+    <div style="height:8px"></div>
+    <button id="loginBtn">登录</button>
+    <div id="loginMsg" class="status" style="margin-top:10px"></div>
+  </section>
+
+  <section id="app" class="hidden">
+    <div class="grid">
+      <div class="card">
+        <label for="profile">Profile（留空使用默认 profile）</label>
+        <input id="profile" value="">
+        <div style="height:8px"></div>
+        <div class="row">
+          <button id="refreshBtn" class="secondary">刷新</button>
+          <button id="validateBtn">校验 + Diff</button>
+          <button id="revisionBtn">创建 Revision</button>
+          <button id="applyBtn">Apply</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="muted">Runtime</div>
+        <div id="runtime" class="status">-</div>
+      </div>
+      <div class="card">
+        <div class="muted">Revision</div>
+        <div id="revision" class="status">-</div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card wide">
+        <div class="muted">Typed configuration</div>
+        <textarea id="config" spellcheck="false"></textarea>
+        <div id="actionMsg" class="status" style="margin-top:10px"></div>
+      </div>
+      <div class="card wide">
+        <div class="muted">Diff against current configuration</div>
+        <div id="diff" class="status" style="margin-top:8px">尚未执行 Diff。</div>
+      </div>
+      <div class="card">
+        <div class="muted">Health</div>
+        <div id="health" class="status">-</div>
+      </div>
+      <div class="card">
+        <div class="muted">Pending revision</div>
+        <div id="pending" class="status">-</div>
+      </div>
+      <div class="card">
+        <div class="muted">Recent revisions</div>
+        <div id="revisions" class="status">-</div>
+      </div>
+    </div>
+  </section>
+</main>
+<script>
+  let csrfToken = "";
+  let baseRevision = 0;
+  let pendingRevision = 0;
+  let loadedConfig = null;
+  let validatedConfigText = "";
+
+  const $ = (id) => document.getElementById(id);
+  const profileQuery = () => {
+    const p = $("profile").value.trim();
+    return p ? `?profile=${encodeURIComponent(p)}` : "";
+  };
+  const setMsg = (el, text, cls = "") => { el.textContent = text; el.className = `status ${cls}`; };
+
+  async function parseResponse(res) {
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { throw new Error(`HTTP ${res.status}: invalid JSON`); }
+    if (!res.ok) {
+      const msg = data?.error?.message || `HTTP ${res.status}`;
+      const err = new Error(msg); err.status = res.status; err.payload = data; throw err;
+    }
+    return data;
+  }
+
+  async function apiGet(path) {
+    return parseResponse(await fetch(path, { credentials: "same-origin" }));
+  }
+
+  async function apiPost(path, body) {
+    const headers = { "Content-Type": "application/json" };
+    if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
+    return parseResponse(await fetch(path, {
+      method: "POST", credentials: "same-origin", headers,
+      body: JSON.stringify(body)
+    }));
+  }
+
+  function diffObjects(a, b, path = "$") {
+    const out = [];
+    const aObj = a && typeof a === "object" ? a : null;
+    const bObj = b && typeof b === "object" ? b : null;
+    if (!aObj || !bObj || Array.isArray(aObj) !== Array.isArray(bObj)) {
+      if (JSON.stringify(a) !== JSON.stringify(b)) out.push({ type: "changed", path, before: a, after: b });
+      return out;
+    }
+    if (Array.isArray(aObj)) {
+      const n = Math.max(aObj.length, bObj.length);
+      for (let i = 0; i < n; i++) {
+        const p = `${path}[${i}]`;
+        if (i >= aObj.length) out.push({ type: "added", path: p, after: bObj[i] });
+        else if (i >= bObj.length) out.push({ type: "removed", path: p, before: aObj[i] });
+        else out.push(...diffObjects(aObj[i], bObj[i], p));
+      }
+      return out;
+    }
+    const keys = new Set([...Object.keys(aObj), ...Object.keys(bObj)]);
+    for (const key of [...keys].sort()) {
+      const p = `${path}.${key}`;
+      if (!(key in aObj)) out.push({ type: "added", path: p, after: bObj[key] });
+      else if (!(key in bObj)) out.push({ type: "removed", path: p, before: aObj[key] });
+      else out.push(...diffObjects(aObj[key], bObj[key], p));
+    }
+    return out;
+  }
+
+  function renderDiff(items) {
+    if (!items.length) { $("diff").innerHTML = '<span class="ok">无配置变化。</span>'; return; }
+    $("diff").innerHTML = items.map(item => {
+      const cls = item.type === "added" ? "diff-added" : item.type === "removed" ? "diff-removed" : "diff-changed";
+      const before = item.before === undefined ? "" : ` before=${JSON.stringify(item.before)}`;
+      const after = item.after === undefined ? "" : ` after=${JSON.stringify(item.after)}`;
+      return `<div class="diff-item ${cls}">${item.type}: ${item.path}${before}${after}</div>`;
+    }).join("");
+  }
+
+  async function loadState() {
+    try {
+      const q = profileQuery();
+      const [status, health, config, revisions] = await Promise.all([
+        apiGet(`/api/v1/status${q}`),
+        apiGet(`/api/v1/health${q}`),
+        apiGet(`/api/v1/config${q}`),
+        apiGet(`/api/v1/revisions${q}`)
+      ]);
+      const s = status.data || {};
+      loadedConfig = config.data;
+      $("config").value = JSON.stringify(loadedConfig, null, 2);
+      validatedConfigText = "";
+      baseRevision = Number(s.current_revision || 0);
+      pendingRevision = 0;
+      $("runtime").textContent = JSON.stringify({ backend: s.backend, adapter: s.adapter, control: s.control }, null, 2);
+      $("revision").textContent = JSON.stringify({ current: s.current_revision, desired: s.desired_revision }, null, 2);
+      $("health").textContent = JSON.stringify(health.data || health, null, 2);
+      $("revisions").textContent = JSON.stringify(revisions.data || revisions, null, 2);
+      $("pending").textContent = "-";
+      setMsg($("actionMsg"), `已加载，基线 revision=${baseRevision}`, "ok");
+      renderDiff([]);
+    } catch (err) {
+      if (err.status === 401) showLogin();
+      else setMsg($("actionMsg"), err.message, "error");
+    }
+  }
+
+  async function login() {
+    setMsg($("loginMsg"), "登录中…");
+    try {
+      const data = await apiPost("/session/login", { token: $("token").value });
+      csrfToken = data.csrf_token;
+      $("token").value = "";
+      showApp();
+      await loadState();
+    } catch (err) {
+      setMsg($("loginMsg"), err.message, err.status === 429 ? "warn" : "error");
+    }
+  }
+
+  async function validateAndDiff() {
+    try {
+      const candidate = JSON.parse($("config").value);
+      const q = profileQuery();
+      await apiPost("/api/v1/validate", { profile: $("profile").value.trim() || undefined, config: candidate });
+      renderDiff(diffObjects(loadedConfig, candidate));
+      validatedConfigText = JSON.stringify(candidate);
+      setMsg($("actionMsg"), `Validation passed；基线 revision=${baseRevision}。Diff 已生成。`, "ok");
+    } catch (err) {
+      setMsg($("actionMsg"), `Validation/Diff failed: ${err.message}`, "error");
+    }
+  }
+
+  async function createRevision() {
+    try {
+      const text = $("config").value;
+      if (text !== validatedConfigText) throw new Error("配置已在最后一次 Validation 后发生变化，请重新校验。");
+      const candidate = JSON.parse(text);
+      const data = await apiPost("/api/v1/revisions", {
+        profile: $("profile").value.trim() || undefined,
+        config: candidate,
+        if_match_revision: baseRevision,
+        actor: "web-ui",
+        change_summary: "Web UI configuration change"
+      });
+      pendingRevision = Number(data.data?.revision || 0);
+      $("pending").textContent = String(pendingRevision || "-");
+      setMsg($("actionMsg"), `Revision ${pendingRevision} 已创建。`, "ok");
+      await loadState();
+      pendingRevision = Number(data.data?.revision || 0);
+      $("pending").textContent = String(pendingRevision || "-");
+    } catch (err) {
+      setMsg($("actionMsg"), err.status === 409 ? `Revision conflict: ${err.message}，请刷新后重试。` : err.message, err.status === 409 ? "warn" : "error");
+    }
+  }
+
+  async function applyRevision() {
+    try {
+      if (!pendingRevision) throw new Error("请先创建 Revision。");
+      const data = await apiPost("/api/v1/apply", {
+        profile: $("profile").value.trim() || undefined,
+        revision: pendingRevision,
+        if_match_revision: pendingRevision,
+        actor: "web-ui"
+      });
+      setMsg($("actionMsg"), `Revision ${pendingRevision} 已提交 Apply：${JSON.stringify(data.data?.reconcile || data)}`, "ok");
+      await loadState();
+    } catch (err) {
+      setMsg($("actionMsg"), err.status === 409 ? `Apply conflict: ${err.message}，请刷新后重新建立 Revision。` : err.message, err.status === 409 ? "warn" : "error");
+    }
+  }
+
+  async function logout() {
+    try { await apiPost("/session/logout", {}); } catch (_) {}
+    csrfToken = ""; showLogin();
+  }
+
+  function showLogin() {
+    $("login").classList.remove("hidden");
+    $("app").classList.add("hidden");
+    $("logout").classList.add("hidden");
+  }
+
+  function showApp() {
+    $("login").classList.add("hidden");
+    $("app").classList.remove("hidden");
+    $("logout").classList.remove("hidden");
+  }
+
+  $("loginBtn").addEventListener("click", login);
+  $("token").addEventListener("keydown", e => { if (e.key === "Enter") login(); });
+  $("logout").addEventListener("click", logout);
+  $("refreshBtn").addEventListener("click", loadState);
+  $("validateBtn").addEventListener("click", validateAndDiff);
+  $("revisionBtn").addEventListener("click", createRevision);
+  $("applyBtn").addEventListener("click", applyRevision);
+
+  (async () => {
+    try {
+      const s = await apiGet("/session");
+      csrfToken = s.csrf_token;
+      showApp();
+      await loadState();
+    } catch (_) { showLogin(); }
+  })();
+</script>
+</body>
+</html>

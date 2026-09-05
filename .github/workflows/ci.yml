@@ -30,7 +30,7 @@ jobs:
           bash -n install-user.sh
           bash -n upgrade.sh
           bash -n upgrade-user.sh
-          python3 -m py_compile lib/legacy-typed-export.py lib/typed-legacy-export.py bin/proxy-agent-api bin/proxy-agent-reconcile bin/proxy-agent-web
+          python3 -m py_compile lib/legacy-typed-export.py lib/typed-legacy-export.py bin/proxy-agent-api bin/proxy-agent-reconcile bin/proxy-agent-web bin/proxy-agent-web-ui
       - name: Typed config smoke
         run: bash tests/typed-config-smoke.sh
       - name: Legacy to typed config smoke
@@ -91,6 +91,8 @@ jobs:
         run: bash tests/systemd-contract-smoke.sh
       - name: Web gateway smoke
         run: bash tests/web-gateway-smoke.sh
+      - name: Web UI smoke
+        run: bash tests/web-ui-smoke.sh
       - name: Functional smoke suite
         run: bash tests/smoke.sh
       - name: TUI guard smoke

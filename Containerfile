@@ -24,6 +24,7 @@ COPY lib /opt/proxy-agent/lib
 COPY backends /opt/proxy-agent/backends
 COPY adapters /opt/proxy-agent/adapters
 COPY integrations /opt/proxy-agent/integrations
+COPY web /opt/proxy-agent/web
 COPY proxy-agent.conf.example /etc/proxy-agent/proxy-agent.conf.example
 COPY VERSION /opt/proxy-agent/VERSION
 
