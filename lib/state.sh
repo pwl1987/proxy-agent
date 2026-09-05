@@ -85,11 +85,9 @@ state_lifecycle_lock_acquire() {
   mkdir -p "$(state_dir)"
 
   # A trusted orchestrator may pass its already-held lock file descriptor to a
-  # child CLI. Reuse only when the descriptor resolves to this exact lock path;
-  # otherwise fall back to taking a new lock. The inherited descriptor is not
-  # unlocked by the child, because flock locks are attached to the open file
-  # description and the parent still owns the orchestration transaction.
-  local inherited_fd="${PA_LIFECYCLE_FD:-}" lock_file fd_target
+  # child CLI. Reuse it only when it still resolves to this exact lifecycle
+  # lock inode. The child never unlocks the inherited descriptor.
+  local inherited_fd="${PA_LIFECYCLE_FD:-}" lock_file fd_target lock_inode path_inode group
   if [[ "${PA_LIFECYCLE_FD_INHERITED:-false}" == true && "$inherited_fd" =~ ^[0-9]+$ && -e "/proc/$$/fd/$inherited_fd" ]]; then
     lock_file="$(readlink -f "$(state_lifecycle_lock_file)")"
     fd_target="$(readlink -f "/proc/$$/fd/$inherited_fd" 2>/dev/null || true)"
@@ -100,8 +98,35 @@ state_lifecycle_lock_acquire() {
     unset PA_LIFECYCLE_FD PA_LIFECYCLE_FD_INHERITED
   fi
 
-  exec {PA_LIFECYCLE_FD}>"$(state_lifecycle_lock_file)"
-  chmod 0600 "$(state_lifecycle_lock_file)"
+  lock_file="$(state_lifecycle_lock_file)"
+  [[ ! -L "$lock_file" ]] || die "lifecycle lock must not be a symbolic link: $lock_file"
+
+  # Append-open avoids truncating a file if an attacker races the pathname.
+  # Verify the opened inode still matches the pathname before changing its
+  # mode/group through the already-open descriptor.
+  exec {PA_LIFECYCLE_FD}>>"$lock_file"
+  if [[ -L "$lock_file" ]]; then
+    eval "exec ${PA_LIFECYCLE_FD}>&-"
+    unset PA_LIFECYCLE_FD
+    die "lifecycle lock path changed to a symbolic link: $lock_file"
+  fi
+  fd_target="$(readlink -f "/proc/$$/fd/$PA_LIFECYCLE_FD" 2>/dev/null || true)"
+  lock_inode="$(stat -Lc '%d:%i' "/proc/$$/fd/$PA_LIFECYCLE_FD" 2>/dev/null || true)"
+  path_inode="$(stat -Lc '%d:%i' "$lock_file" 2>/dev/null || true)"
+  [[ -n "$fd_target" && -n "$lock_inode" && "$lock_inode" == "$path_inode" ]] || {
+    eval "exec ${PA_LIFECYCLE_FD}>&-"
+    unset PA_LIFECYCLE_FD
+    die "lifecycle lock path changed during open: $lock_file"
+  }
+
+  # Keep the lock accessible to the state-directory group when root creates
+  # it first (for example during an upgrade while the service is stopped).
+  if (( EUID == 0 )); then
+    group="$(stat -c '%G' "$(state_dir)" 2>/dev/null || true)"
+    [[ -n "$group" && "$group" != '?' ]] && chgrp "$group" "/proc/$$/fd/$PA_LIFECYCLE_FD" 2>/dev/null || true
+  fi
+  chmod 0660 "/proc/$$/fd/$PA_LIFECYCLE_FD" 2>/dev/null || true
+
   if ! command -v flock >/dev/null 2>&1; then
     die '缺少 flock，无法保证生命周期并发锁'
   fi
