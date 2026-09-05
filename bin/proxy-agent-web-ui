@@ -20,6 +20,7 @@ CORE_PATH = Path(__file__).resolve().with_name("proxy-agent-web")
 UI_PATH = ROOT / "web" / "index.html"
 FORM_JS_PATH = ROOT / "web" / "config-form.js"
 PROFILE_SELECTOR_JS_PATH = ROOT / "web" / "profile-selector.js"
+CONFIG_FORM_SYNC_JS_PATH = ROOT / "web" / "config-form-sync.js"
 
 
 def load_core():
@@ -144,6 +145,9 @@ class WebUIHandler(core.GatewayHandler):
         if path == "/profile-selector.js":
             self._send_static(PROFILE_SELECTOR_JS_PATH, "text/javascript; charset=utf-8")
             return
+        if path == "/config-form-sync.js":
+            self._send_static(CONFIG_FORM_SYNC_JS_PATH, "text/javascript; charset=utf-8")
+            return
         super().do_GET()
 
     def do_PUT(self) -> None:
@@ -177,7 +181,7 @@ class WebUIHandler(core.GatewayHandler):
     def _serve_ui(self) -> None:
         try:
             body = UI_PATH.read_text(encoding="utf-8")
-            injection = '<script src="/config-form.js" defer></script><script src="/profile-selector.js" defer></script>'
+            injection = '<script src="/config-form.js" defer></script><script src="/profile-selector.js" defer></script><script src="/config-form-sync.js" defer></script>'
             if injection not in body:
                 body = body.replace("</head>", f"{injection}</head>", 1)
             payload = body.encode("utf-8")
