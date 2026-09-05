@@ -10,13 +10,34 @@ trap 'kill "${WEB_PID:-}" "${API_PID:-}" 2>/dev/null || true; rm -rf "$TMP"' EXI
 SOCKET="$TMP/control.sock"
 STATE="$TMP/state"
 TOKEN="$TMP/admin.token"
+PROFILE_DIR="$TMP/profiles"
 PORT=18445
-mkdir -p "$STATE"
+mkdir -p "$STATE" "$PROFILE_DIR"
 printf '%s\n' 'smoke-admin-token' >"$TOKEN"
 chmod 0600 "$TOKEN"
+cat >"$PROFILE_DIR/work.conf" <<'EOF'
+BACKEND="local-endpoint"
+LOCAL_PROXY_URL="http://127.0.0.1:3128"
+LOCAL_PROXY_STATUS_TARGET="https://example.com"
+SOCKS_BIND="127.0.0.1"
+SOCKS_PORT="1080"
+HTTP_ENABLED="false"
+HTTP_BIND="127.0.0.1"
+HTTP_PORT="8118"
+HEALTH_NETWORK_REQUIRED="false"
+HEALTH_TIMEOUT="5"
+HEALTH_RETRIES="0"
+HEALTH_BACKOFF="0"
+HEALTH_AUTO_RECOVER="true"
+INTEGRATE_GIT="true"
+INTEGRATE_DOCKER="false"
+INTEGRATE_PIP="false"
+INTEGRATE_NPM="false"
+EOF
+chmod 0600 "$PROFILE_DIR/work.conf"
 
 PA_STATE_DIR="$STATE" python3 -m py_compile "$API" "$WEB"
-PA_STATE_DIR="$STATE" python3 "$API" --socket "$SOCKET" >"$TMP/api.log" 2>&1 &
+PA_PROFILE_DIR="$PROFILE_DIR" PA_STATE_DIR="$STATE" python3 "$API" --socket "$SOCKET" >"$TMP/api.log" 2>&1 &
 API_PID=$!
 
 for _ in {1..30}; do
@@ -62,5 +83,17 @@ test "$status" = 200
 
 grep -q '"event":"login.success"' "$events"
 grep -q '"status":"succeeded"' "$events"
+
+profiles="$(curl -sS -b "$TMP/cookies.txt" "http://127.0.0.1:$PORT/api/v1/profiles")"
+PROFILE_JSON="$profiles" python3 - <<'PY'
+import json, os
+obj = json.loads(os.environ["PROFILE_JSON"])
+assert obj["api_version"] == "v1", obj
+assert obj["kind"] == "profiles", obj
+assert obj["data"]["profiles"] == ["work"], obj
+PY
+
+status="$(curl -sS -o "$TMP/profiles-unauth.body" -w '%{http_code}' "http://127.0.0.1:$PORT/api/v1/profiles")"
+test "$status" = 401
 
 echo 'web auth audit smoke: PASS'
