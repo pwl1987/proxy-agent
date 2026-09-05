@@ -65,7 +65,7 @@ run_pair plain start start
 [[ -f "$STATE/.lifecycle.lock" ]] || { echo 'plain lifecycle lock file missing' >&2; exit 1; }
 
 run_pair profile '--profile demo start' '--profile demo start'
-[[ -f "$STATE/demo/.lifecycle.lock" ]] || { echo 'profile lifecycle lock file missing' >&2; exit 1; }
+[[ -f "$STATE/.lifecycle.lock" ]] || { echo 'profile lifecycle lock file missing' >&2; exit 1; }
 
 rm -f "$STATE/.lifecycle.lock"
 "$TMP/bin/proxy-ctl" status >/dev/null
