@@ -89,6 +89,11 @@ fi
 if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
   systemctl --user daemon-reload
   if $was_active; then
+    # The user service invokes proxy-ctl, which must acquire the same
+    # lifecycle lock. Release our transaction lock before asking systemd to
+    # start the service, otherwise the service would wait on us while we wait
+    # for systemctl --user start to complete.
+    state_lifecycle_lock_release
     systemctl --user start "$SERVICE_NAME"
   fi
 fi
