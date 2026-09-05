@@ -94,14 +94,9 @@ printf 'known' >"$tmp_dir/known/target"
 chmod 600 "$tmp_dir/keys/jump" "$tmp_dir/keys/target"
 chmod 644 "$tmp_dir/known/jump" "$tmp_dir/known/target"
 
-die() { printf '%s\n' "$*" >&2; return 1; }
-warn() { :; }
-require_cmd() { :; }
-expand_home() { printf '%s' "$1"; }
-port_listening() { return 1; }
-listener_owned() { return 0; }
-source "$ROOT/backends/ssh-socks.sh"
+export PA_CONFIG="$tmp_dir/proxy-agent.conf"
 export PA_STATE_DIR="$tmp_dir/state"
+export PA_LOG_DIR="$tmp_dir/log"
 export SSH_JUMP_KEY="file:$tmp_dir/keys/jump"
 export SSH_JUMP_KNOWN_HOSTS="file:$tmp_dir/known/jump"
 export SSH_TARGET_KEY="file:$tmp_dir/keys/target"
@@ -113,6 +108,8 @@ export REMOTE_HOST='target"node.example'
 export REMOTE_USER='target user'
 export REMOTE_PORT=22
 export SSH_STRICT_HOST_KEY_CHECKING=yes
+source "$ROOT/lib/common.sh"
+source "$ROOT/backends/ssh-socks.sh"
 mkdir -p "$PA_STATE_DIR"
 ssh_config="$PA_STATE_DIR/ssh-socks-runtime.conf"
 backend_ssh_socks_write_jump_config "$ssh_config"
@@ -124,13 +121,9 @@ printf '%s\n' "$assert_file" | grep -F 'User "target user"' >/dev/null
 printf '%s\n' "$assert_file" | grep -F "IdentityFile \"$tmp_dir/keys/jump\"" >/dev/null
 [[ "$(stat -c '%a' "$ssh_config")" == 600 ]]
 
-if chmod 640 "$tmp_dir/keys/jump"; then
-  if ssh_identity_resolve "file:$tmp_dir/keys/jump" >/dev/null 2>&1; then
-    printf 'identity group-readable key unexpectedly accepted\n' >&2
-    exit 1
-  fi
-else
-  printf 'unable to modify temporary identity permissions\n' >&2
+chmod 640 "$tmp_dir/keys/jump"
+if (ssh_identity_resolve "file:$tmp_dir/keys/jump" >/dev/null 2>&1); then
+  printf 'identity group-readable key unexpectedly accepted\n' >&2
   exit 1
 fi
 
