@@ -1,0 +1,1 @@
+Before 0.4.0, verify upgrade transaction serialization, real backend execution, and final performance/history evidence.

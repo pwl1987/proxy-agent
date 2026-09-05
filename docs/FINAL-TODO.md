@@ -1,0 +1,1 @@
+Upgrade entrypoints must join lifecycle lock; then run real backend and performance/history gates.

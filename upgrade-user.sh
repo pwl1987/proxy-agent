@@ -14,6 +14,14 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ -f "$ROOT/install-user.sh" ]] || { echo 'upgrade-user.sh 必须从 proxy-agent 源码目录运行' >&2; exit 1; }
 [[ -f "$ETC/proxy-agent.conf" ]] || { echo "未找到配置文件：$ETC/proxy-agent.conf" >&2; exit 1; }
 
+# Match proxy-ctl's rootless default runtime state directory.
+PA_STATE_DIR="${PA_STATE_DIR:-${XDG_RUNTIME_DIR:-$HOME/.cache/proxy-agent}/run}"
+# shellcheck disable=SC1091
+source "$ROOT/lib/state.sh"
+state_lifecycle_lock_acquire
+release_lifecycle_lock() { state_lifecycle_lock_release; }
+cleanup_lifecycle() { release_lifecycle_lock; cleanup_backup; }
+
 was_active=false
 if command -v systemctl >/dev/null 2>&1 && systemctl --user is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
   was_active=true
@@ -21,7 +29,7 @@ fi
 
 backup_root="$(mktemp -d "${TMPDIR:-/tmp}/proxy-agent-user-upgrade.XXXXXX")"
 cleanup_backup() { rm -rf -- "$backup_root"; }
-trap cleanup_backup EXIT
+trap cleanup_lifecycle EXIT
 
 backup_tree() {
   local source="$1" target="$2"

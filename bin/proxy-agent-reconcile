@@ -56,18 +56,18 @@ def atomic_write(path: Path, content: str, mode: int = 0o600) -> None:
 
 
 @contextmanager
-def reconcile_lock(state_dir: Path):
+def lifecycle_lock(state_dir: Path):
     state_dir.mkdir(parents=True, exist_ok=True)
-    lock_path = state_dir / ".reconcile.lock"
-    with lock_path.open("a+", encoding="utf-8") as lock_file:
+    lock_path = state_dir / ".lifecycle.lock"
+    if fcntl is None:
+        raise RuntimeError("fcntl is required for the lifecycle lock")
+    with lock_path.open("a+b") as lock_file:
         os.chmod(lock_path, 0o600)
-        if fcntl is not None:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
         try:
             yield
         finally:
-            if fcntl is not None:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
 
 
 def bootstrap_desired() -> int:
@@ -170,7 +170,7 @@ def main() -> int:
     if profile and os.environ.get("PA_STATE_DIR_EXPLICIT", "false") != "true":
         state_dir = state_dir / profile
 
-    with reconcile_lock(state_dir):
+    with lifecycle_lock(state_dir):
         if args.bootstrap:
             bootstrap_desired()
 
