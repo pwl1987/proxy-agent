@@ -111,7 +111,7 @@ grep -qi 'no-store' "$TMP/js.headers"
 
 status="$(curl -sS -D "$TMP/profile-js.headers" -o "$TMP/profile-selector.js" -w '%{http_code}' "http://127.0.0.1:$PORT/profile-selector.js" || true)"
 test "$status" = 200 || { cat "$LOG" >&2; cat "$TMP/profile-selector.js" >&2 || true; exit 1; }
-grep -q 'proxyAgentLoadProfiles' "$TMP/profile-selector.js"
+grep -q 'loadProfiles' "$TMP/profile-selector.js"
 grep -q '/api/v1/profiles' "$TMP/profile-selector.js"
 grep -q 'profileSelectorBound' "$TMP/profile-selector.js"
 grep -qi 'no-store' "$TMP/profile-js.headers"
