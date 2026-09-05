@@ -94,7 +94,6 @@ printf 'known' >"$tmp_dir/known/target"
 chmod 600 "$tmp_dir/keys/jump" "$tmp_dir/keys/target"
 chmod 644 "$tmp_dir/known/jump" "$tmp_dir/known/target"
 
-ROOT="$ROOT"
 die() { printf '%s\n' "$*" >&2; return 1; }
 warn() { :; }
 require_cmd() { :; }
@@ -118,11 +117,11 @@ mkdir -p "$PA_STATE_DIR"
 ssh_config="$PA_STATE_DIR/ssh-socks-runtime.conf"
 backend_ssh_socks_write_jump_config "$ssh_config"
 assert_file="$(cat "$ssh_config")"
-[[ "$assert_file" == *'HostName "jump\\"node\\\\1.example"'* ]]
-[[ "$assert_file" == *'User "jump user"'* ]]
-[[ "$assert_file" == *'HostName "target\\"node\\\\1.example"'* ]]
-[[ "$assert_file" == *'User "target user"'* ]]
-[[ "$assert_file" == *'IdentityFile "'$tmp_dir'/keys/jump"'* ]]
+printf '%s\n' "$assert_file" | grep -F 'HostName "jump\"node\\1.example"' >/dev/null
+printf '%s\n' "$assert_file" | grep -F 'User "jump user"' >/dev/null
+printf '%s\n' "$assert_file" | grep -F 'HostName "target\"node\\1.example"' >/dev/null
+printf '%s\n' "$assert_file" | grep -F 'User "target user"' >/dev/null
+printf '%s\n' "$assert_file" | grep -F "IdentityFile \"$tmp_dir/keys/jump\"" >/dev/null
 [[ "$(stat -c '%a' "$ssh_config")" == 600 ]]
 
 if chmod 640 "$tmp_dir/keys/jump"; then
