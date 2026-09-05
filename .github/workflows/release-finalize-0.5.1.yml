@@ -1,0 +1,155 @@
+name: Repair 0.5.1 Release Provenance
+
+on:
+  push:
+    branches:
+      - 'chore/release-finalize-repair-2'
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  TAG: v0.5.1
+  EXPECTED_SOURCE: 3f4108e0c1d758bc2d093c8b89d0f45329ef7d86
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+
+jobs:
+  repair-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repair branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Log initial provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== 0.5.1 PROVENANCE REPAIR: START ==='
+          echo "event=$GITHUB_EVENT_NAME"
+          echo "ref=$GITHUB_REF"
+          echo "ref_name=$GITHUB_REF_NAME"
+          echo "branch_head=$GITHUB_SHA"
+          echo "run_id=$GITHUB_RUN_ID"
+          echo "repository=$GITHUB_REPOSITORY"
+          echo "expected_source=$EXPECTED_SOURCE"
+          git fetch --tags --force origin
+          old_target="$(git rev-list -n1 refs/tags/$TAG^{commit})"
+          echo "old_tag_target=$old_target"
+          echo "branch_tree=$(git rev-parse HEAD^{tree})"
+          git show -s --format='branch_commit=%H%nparents=%P%nauthor=%an <%ae>%ncommitter=%cn%ndate=%cI%nsubject=%s' HEAD
+          version="$(tr -d '[:space:]' < VERSION)"
+          echo "version=$version"
+          test "$version" = "0.5.1"
+
+      - name: Remove published release and repair immutable tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== RELEASE REPAIR ==='
+          gh release delete "$TAG" --yes
+          git push origin --delete "refs/tags/$TAG"
+          git tag -a -f "$TAG" "$EXPECTED_SOURCE" -m 'release: proxy-agent 0.5.1'
+          git push origin "refs/tags/$TAG"
+          git fetch --tags --force origin
+          repaired_target="$(git rev-list -n1 refs/tags/$TAG^{commit})"
+          echo "new_tag_target=$repaired_target"
+          test "$repaired_target" = "$EXPECTED_SOURCE"
+          git show -s --format='tag_commit=%H%ntag_subject=%s%ntag_date=%cI' "$TAG"
+
+      - name: Checkout release tag and prove source identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== CHECKOUT TAG ==='
+          git checkout --detach "$TAG"
+          source_commit="$(git rev-parse HEAD)"
+          source_tree="$(git rev-parse HEAD^{tree})"
+          tag_target="$(git rev-list -n1 refs/tags/$TAG^{commit})"
+          echo "source_commit=$source_commit"
+          echo "source_tree=$source_tree"
+          echo "tag_target=$tag_target"
+          test "$source_commit" = "$EXPECTED_SOURCE"
+          test "$source_commit" = "$tag_target"
+          test -z "$(git status --porcelain)"
+          echo 'tag_source_consistency=passed'
+
+      - name: Run release-source validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== SOURCE VALIDATION ==='
+          version="$(tr -d '[:space:]' < VERSION)"
+          echo "version=$version"
+          test "$version" = "0.5.1"
+          find bin lib backends adapters integrations tests -type f -name '*.sh' -print0 \
+            | xargs -0 -r -n1 bash -n
+          bash -n install.sh install-user.sh upgrade.sh upgrade-user.sh
+          echo 'shell_syntax=passed'
+          echo 'source_validation=passed'
+
+      - name: Build container strictly from tag
+        run: |
+          set -euo pipefail
+          echo '=== CONTAINER BUILD FROM TAG ==='
+          docker build --pull -f Containerfile -t "$IMAGE_NAME:0.5.1" -t "$IMAGE_NAME:latest" .
+          docker image inspect "$IMAGE_NAME:0.5.1" >/dev/null
+          docker image inspect --format='image_id={{.Id}} created={{.Created}}' "$IMAGE_NAME:0.5.1"
+          echo 'container_build=passed'
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish corrected image and capture provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== CONTAINER PUBLISH ==='
+          docker push "$IMAGE_NAME:0.5.1"
+          version_digest="$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_NAME:0.5.1")"
+          echo "version_digest=$version_digest"
+          docker push "$IMAGE_NAME:latest"
+          latest_digest="$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE_NAME:latest")"
+          echo "latest_digest=$latest_digest"
+          printf '%s\n' "$version_digest" > container-digest.txt
+          {
+            echo "release_version=0.5.1"
+            echo "repository=$GITHUB_REPOSITORY"
+            echo "tag=$TAG"
+            echo "source_commit=$(git rev-parse HEAD)"
+            echo "source_tree=$(git rev-parse HEAD^{tree})"
+            echo "tag_target=$(git rev-list -n1 refs/tags/$TAG^{commit})"
+            echo "image=$IMAGE_NAME:0.5.1"
+            echo "image_digest=$version_digest"
+            echo "latest_image=$IMAGE_NAME:latest"
+            echo "latest_digest=$latest_digest"
+            echo "workflow_run_id=$GITHUB_RUN_ID"
+            echo "workflow_run_url=https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "published_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } | tee release-provenance.txt
+          echo 'container_publish=passed'
+
+      - name: Recreate GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== GITHUB RELEASE RECREATE ==='
+          gh release create "$TAG" \
+            --verify-tag \
+            --generate-notes \
+            --title 'proxy-agent v0.5.1' \
+            container-digest.txt \
+            release-provenance.txt
+          gh release view "$TAG" --json name,tagName,isDraft,isPrerelease,publishedAt,url,assets
+          echo 'github_release=created'
+          echo '=== 0.5.1 PROVENANCE REPAIR: COMPLETE ==='
