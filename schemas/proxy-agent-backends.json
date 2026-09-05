@@ -3,7 +3,7 @@
   "backends": {
     "ssh-socks": {
       "managed": true,
-      "capabilities": ["socks5", "dynamic_dns", "stream_proxy"],
+      "capabilities": ["socks5", "dynamic_dns", "stream_proxy", "supports_egress_path"],
       "options": [
         {"name": "remote_host", "type": "string", "required": true},
         {"name": "remote_user", "type": "string", "required": true},

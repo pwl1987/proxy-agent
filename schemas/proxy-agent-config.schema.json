@@ -32,6 +32,10 @@
         }
       }
     },
+    "egress_path": {
+      "$ref": "#/$defs/directEgressPath",
+      "description": "Optional canonical upstream path. 0.5.0 implements only one direct SSH path."
+    },
     "listeners": {
       "type": "object",
       "additionalProperties": false,
@@ -125,6 +129,26 @@
     }
   },
   "$defs": {
+    "directEgressPath": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["transport", "mode", "target"],
+      "properties": {
+        "transport": {"type": "string", "const": "ssh"},
+        "mode": {"type": "string", "const": "direct"},
+        "target": {"$ref": "#/$defs/directEgressTarget"}
+      }
+    },
+    "directEgressTarget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["host", "user", "port"],
+      "properties": {
+        "host": {"type": "string", "minLength": 1},
+        "user": {"type": "string", "minLength": 1},
+        "port": {"$ref": "#/$defs/port"}
+      }
+    },
     "listener": {
       "type": "object",
       "additionalProperties": false,
