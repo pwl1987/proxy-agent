@@ -55,6 +55,8 @@ jobs:
         run: bash tests/agent-environment-smoke.sh
       - name: Revision store smoke
         run: bash tests/revision-store-smoke.sh
+      - name: Audit lock smoke
+        run: bash tests/audit-lock-smoke.sh
       - name: Reconciler smoke
         run: bash tests/reconciler-smoke.sh
       - name: Reconciler pin smoke
