@@ -77,18 +77,6 @@ apply_config_defaults() {
   : "${INTEGRATE_DOCKER:=false}"
   : "${INTEGRATE_PIP:=false}"
   : "${INTEGRATE_NPM:=false}"
-
-  # proxy-ctl reaches this hook only after profile/config resolution has
-  # selected the final runtime directory. Read-only and diagnostic commands
-  # deliberately remain outside the lifecycle lock.
-  if [[ "$(basename -- "$0")" == proxy-ctl ]]; then
-    case "${1:-}" in
-      start|stop|restart|run)
-        state_lifecycle_lock_acquire
-        trap 'state_lifecycle_lock_release' EXIT HUP INT TERM
-        ;;
-    esac
-  fi
 }
 
 load_config() {
