@@ -35,6 +35,15 @@ else
   load_config
 fi
 
+# Lifecycle locking belongs here, after profile/config resolution has selected
+# the final runtime directory. Read-only and diagnostic commands do not lock.
+case "${1:-}" in
+  start|stop|restart|run)
+    state_lifecycle_lock_acquire
+    trap 'state_lifecycle_lock_release' EXIT HUP INT TERM
+    ;;
+esac
+
 backend_load
 
 adapter_start() {
@@ -308,7 +317,7 @@ usage() {
   restart                     重启代理栈
   status [--json|--json=v2]  查看运行状态
   test                        测试配置的代理连通性
-  diagnose                    诊断依赖、配置与运行环境
+  diagnose                   诊断依赖、配置与运行环境
   doctor                      检查不安全或不一致的配置
   route <主机名或IPv4>        解释有序分流策略
   env [--off]                 输出 shell 代理环境变量命令

@@ -83,6 +83,13 @@ state_lock_release() {
 
 state_lifecycle_lock_acquire() {
   mkdir -p "$(state_dir)"
+  if [[ "${PA_LIFECYCLE_FD_INHERITED:-false}" == true && "${PA_LIFECYCLE_FD:-}" =~ ^[0-9]+$ ]]; then
+    local inherited_target
+    inherited_target="$(readlink "/proc/$$/fd/${PA_LIFECYCLE_FD}" 2>/dev/null || true)"
+    if [[ "$inherited_target" == "$(state_lifecycle_lock_file)" ]]; then
+      return 0
+    fi
+  fi
   exec {PA_LIFECYCLE_FD}>"$(state_lifecycle_lock_file)"
   chmod 0600 "$(state_lifecycle_lock_file)"
   if ! command -v flock >/dev/null 2>&1; then
@@ -92,6 +99,9 @@ state_lifecycle_lock_acquire() {
 }
 
 state_lifecycle_lock_release() {
+  if [[ "${PA_LIFECYCLE_FD_INHERITED:-false}" == true ]]; then
+    return 0
+  fi
   if [[ -n "${PA_LIFECYCLE_FD:-}" ]]; then
     flock -u "$PA_LIFECYCLE_FD" || true
     eval "exec ${PA_LIFECYCLE_FD}>&-"
